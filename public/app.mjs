@@ -47,6 +47,7 @@ if (!project) {project=example();demo=true;}
 let selected=demo?{kind:'node',id:'stock'}:null;
 let tool={kind:'select'},from=null,drag=null,space=false,timer=null,toastTimer=null,importTask=null;
 let view={x:0,y:0,scale:1},sim,preview=null,chartVisible=new Map(),forecastTask=null;
+let showAllSeries=false;
 const undo=[],redo=[];
 const waypointCache=new Map();
 let alignmentGuides=[];
@@ -131,7 +132,7 @@ function restore(source,destination) {
 }
 function load(newProject,message) {
   waypointCache.clear();
-  change(()=>{project=newProject;selected=null;from=null;tool={kind:'select'};chartVisible=new Map();});
+  change(()=>{project=newProject;selected=null;from=null;tool={kind:'select'};chartVisible=new Map();showAllSeries=false;});
   fit();
   if (message) toast(message);
 }
@@ -624,18 +625,22 @@ function renderInspector() {
 function renderPlot() {
   const data=preview||sim.history;
   const choices=project.nodes.filter(n=>plotTypes.has(n.type));
-  const defaultSeries=new Set(choices.filter(n=>n.type!=='converter').slice(0,3).map(n=>n.id));
-  if (!defaultSeries.size&&choices.length) defaultSeries.add(choices[0].id);
+  const pools=choices.filter(n=>n.type==='pool');
+  const defaultSeries=new Set(pools.slice(0,3).map(n=>n.id));
   const visible=choices.filter(n=>chartVisible.get(n.id)??defaultSeries.has(n.id));
   const colors=new Map(choices.map((n,i)=>[n.id,n.resource!==fallback?resourceColor(n.resource):palette[i%palette.length]]));
-  $('legend').replaceChildren(...choices.map(n=>{
+  $('show-all-series').hidden=choices.length===pools.length;
+  $('show-all-series').textContent=showAllSeries?'Pools only':'Show all';
+  $('show-all-series').setAttribute('aria-expanded',String(showAllSeries));
+  $('legend').replaceChildren(...(showAllSeries?choices:pools).map(n=>{
     const show=chartVisible.get(n.id)??defaultSeries.has(n.id);
     const b=el('button',{'aria-pressed':show,title:n.label},[swatch(colors.get(n.id)),document.createTextNode(shorten(n.label,21))]);
     b.addEventListener('click',()=>{chartVisible.set(n.id,!show);renderPlot();});
     return b;
   }));
   if (!visible.length) {
-    $('plot').textContent=choices.length?'Select a series to plot.':'Add a pool, register, converter, delay, or queue to plot its values.';
+    $('plot').textContent=!choices.length?'Add a pool, register, converter, delay, or queue to plot its values.':
+      !showAllSeries&&!pools.length?'No Pool nodes. Choose Show all to plot other node types.':'Select a series to plot.';
     return;
   }
   const w=Math.max(270,$('plot').clientWidth-28),h=Math.max(66,$('plot').clientHeight-5);
@@ -976,6 +981,7 @@ $('redo').addEventListener('click',()=>restore(redo,undo));
 $('new').addEventListener('click',()=>load(blank(),'Created a blank diagram. Use Undo to return.'));
 $('save').addEventListener('click',saveFile);
 $('csv').addEventListener('click',csv);
+$('show-all-series').addEventListener('click',()=>{showAllSeries=!showAllSeries;renderPlot();});
 $('seed').addEventListener('change',()=>{resetSim();renderGraph();renderSim();});
 $('max-steps').addEventListener('change',e=>change(()=>{
   project.steps=clamp(Math.floor(Number(e.target.value)||1),1,9999);
@@ -1001,6 +1007,7 @@ $('forecast-form').addEventListener('submit',async event=>{
   if (forecastTask) return;
   const button=event.target.querySelector('button');
   const count=clamp(Math.floor(Number($('forecast-count').value)),1,1000);
+  const seed=$('seed').value;
   const task={cancelled:false};
   forecastTask=task;
   button.disabled=true;
@@ -1011,7 +1018,7 @@ $('forecast-form').addEventListener('submit',async event=>{
   const yieldFrame=()=>new Promise(resolve=>setTimeout(resolve,0));
   try {
     for (let i=0;i<count&&!task.cancelled;i++) {
-      const run=new Simulation(project,$('seed').value+' / '+i,{retainHistory:false});
+      const run=new Simulation(project,seed.trim()?seed+' / '+i:'',{retainHistory:false});
       for (let step=0;step<project.steps&&!run.ended&&!task.cancelled;step++) {
         run.advance();
         if (performance.now()>deadline) {

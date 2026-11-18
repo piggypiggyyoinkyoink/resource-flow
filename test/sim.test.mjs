@@ -485,6 +485,25 @@ test('same seed produces same stochastic history',()=>{
   assert.notDeepEqual(a,values(new Simulation(diagram,'B'),'p',20));
   assert.equal(seeded('a')(),seeded('a')());
 });
+test('blank seeds use runtime randomness for simulations and forecasts',t=>{
+  const random=t.mock.method(Math,'random',()=>.25);
+  const diagram=model([node('source','s'),node('pool','p')],[flow('s','p','1D6')]);
+  for (const seed of ['', ' \t ', null]) {
+    for (const retainHistory of [true,false]) {
+      const run=new Simulation(diagram,seed,{retainHistory});
+      assert.equal(run.rng,Math.random);
+      assert.equal(run.advance().values.p,2);
+    }
+  }
+  assert.equal(random.mock.callCount(),6);
+  for (const seed of ['0',0,'A']) {
+    const a=new Simulation(diagram,seed), b=new Simulation(diagram,seed);
+    assert.notEqual(a.rng,Math.random);
+    assert.deepEqual(values(a,'p',5),values(b,'p',5));
+  }
+  assert.equal(random.mock.callCount(),6);
+});
+
 test('public URLs are validated before constructing a fixed-host request',()=>{
   const id='c7d816ec919c11f189880abc5ce0dcc9';
   assert.equal(diagramId('https://my.machinations.io/d/diagram/'+id+'?hideHeaderbar=true'),id);

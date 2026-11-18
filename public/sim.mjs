@@ -20,9 +20,9 @@ const clean = n => Number(n.toPrecision(12));
 const tickTypes = new Set(['source','pool','sink','gate','converter','delay','queue','register','end']);
 
 export class Simulation {
-  constructor(project, seed='42', {retainHistory=true}={}) {
+  constructor(project, seed=null, {retainHistory=true}={}) {
     this.project = project;
-    this.rng = seeded(seed);
+    this.rng = seed==null||String(seed).trim()===''?Math.random:seeded(seed);
     this.retainHistory = retainHistory;
     this.step = 0;
     this.ended = '';

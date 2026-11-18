@@ -87,10 +87,13 @@
         </div>
         <div id="plot"></div>
         <div class="simulation-footer">
-          <div id="legend" class="legend"></div>
+          <div class="series-controls">
+            <div id="legend" class="legend"></div>
+            <button id="show-all-series" class="legend-toggle" type="button" aria-controls="legend" aria-expanded="false" hidden>Show all</button>
+          </div>
           <div class="run-settings">
             <label>Steps <input id="max-steps" type="number" min="1" max="9999" aria-label="Number of simulation steps"></label>
-            <label>Seed <input id="seed" value="42" aria-label="Simulation random seed" maxlength="50"></label>
+            <label>Seed <input id="seed" aria-label="Simulation random seed" title="Leave blank for a non-deterministic simulation" placeholder="Random" maxlength="50"></label>
             <label>Speed <select id="speed" aria-label="Simulation speed"><option value="900">0.5×</option><option value="450" selected>1×</option><option value="225">2×</option><option value="110">4×</option></select></label>
           </div>
         </div>

@@ -47,9 +47,9 @@ An expression can also reference `step` for the current time step, `x` for the c
 
 ## Simulate
 
-Use **Step** for one tick, **Play** for continuous execution, and **Reset simulation** to restart. Settings control the run length, speed, and local random seed. Click a node set to **On click** during a run or queue it in Properties to activate it during the simulation. The chart shows node values by tick and its legend toggles individual series. Download a run as CSV using the arrow in the simulation toolbar.
+Use **Step** for one tick, **Play** for continuous execution, and **Reset simulation** to restart. Settings control the run length, speed, and local random seed. Leave the seed blank for non-deterministic runs; enter a seed to reproduce a run. Click a node set to **On click** during a run or queue it in Properties to activate it during the simulation. The chart shows node values by tick. Its scrolling list shows Pools by default; **Show all** reveals Registers, Delays, Queues, and Converters. Click a value to toggle its graph line. **Pools only** hides the other choices while keeping any series you already selected on the graph. Download a run as CSV using the arrow in the simulation toolbar.
 
-**Run a forecast** repeats the model with different local seeds and reports the minimum, median, and maximum final value for each series. Forecasts skip manual clicks.
+**Run a forecast** repeats the model and reports the minimum, median, and maximum final value for each series. With a seed, it uses reproducible per-run seeds; with a blank seed, each run is non-deterministic. Forecasts skip manual clicks.
 
 ## Simulation Compatibility
 
