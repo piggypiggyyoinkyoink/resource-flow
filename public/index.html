@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>Resource Flow</title>
+  <link rel="stylesheet" href="/style.css">
+  <script type="module" src="/app.mjs"></script>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/" aria-label="Resource Flow home"><span class="brand-mark" data-icon="brand"></span><span>Resource Flow</span></a>
+    <div class="project-name"><span data-icon="file"></span><input id="title" aria-label="Diagram name" maxlength="160"></div>
+    <div class="top-actions">
+      <span class="save-status" id="save-status"><i></i><span>Saved locally</span></span>
+      <button class="button quiet" id="new" title="New diagram"><span data-icon="plus"></span><span>New</span></button>
+      <button class="button" id="import"><span data-icon="import"></span><span>Import</span></button>
+      <button class="button" id="save"><span data-icon="download"></span><span>Save file</span></button>
+    </div>
+  </header>
+
+  <main class="layout">
+    <aside class="toolbox panel" aria-label="Diagram tools">
+      <div class="side-heading"><h2>Build</h2><button id="help" class="icon-button" title="Help and shortcuts" aria-label="Help and shortcuts" data-icon="help"></button></div>
+      <div class="side-section">
+        <h3>Nodes</h3>
+        <div class="tools" id="node-tools"></div>
+      </div>
+      <div class="side-section">
+        <h3>Connections</h3>
+        <div class="connection-tools" id="edge-tools"></div>
+      </div>
+      <div class="side-section resource-section">
+        <div class="section-header"><h3>Resources</h3><button class="icon-button" id="resource-add" title="Add resource" aria-label="Add resource" data-icon="plus"></button></div>
+        <div id="resource-list"></div>
+      </div>
+      <div class="side-section">
+        <div class="section-header"><h3>Parameters</h3><button class="icon-button" id="variable-add" title="Add parameter" aria-label="Add parameter" data-icon="plus"></button></div>
+        <div id="variable-list"></div>
+      </div>
+    </aside>
+
+    <div class="workbench">
+      <section class="canvas-panel panel" aria-label="Diagram canvas">
+        <div class="panel-header">
+          <div class="panel-title"><span class="panel-icon" data-icon="canvas"></span><h2>Diagram</h2><span id="counts" class="component-count"></span></div>
+          <div class="header-actions">
+            <button class="icon-button" id="select" title="Select (V)" aria-label="Select" data-icon="cursor"></button>
+            <button class="icon-button" id="pan" title="Pan (H or space)" aria-label="Pan" data-icon="hand"></button>
+            <div class="toolbar-divider"></div>
+            <button class="icon-button" id="undo" title="Undo (Ctrl+Z)" aria-label="Undo" data-icon="undo"></button>
+            <button class="icon-button" id="redo" title="Redo (Ctrl+Shift+Z)" aria-label="Redo" data-icon="redo"></button>
+          </div>
+        </div>
+        <div class="canvas" id="canvas">
+          <svg id="diagram" role="group" aria-label="Editable resource flow diagram">
+            <defs>
+              <pattern id="dots" width="22" height="22" patternUnits="userSpaceOnUse"><circle cx="1" cy="1" r="1" fill="#344053"></circle></pattern>
+            </defs>
+            <rect id="backdrop" width="100%" height="100%" fill="url(#dots)"></rect>
+            <g id="graph"><g id="edges"></g><g id="nodes"></g></g>
+          </svg>
+          <div id="canvas-empty" class="canvas-empty" hidden><span data-icon="canvas"></span><strong>This diagram is empty</strong><p>Choose a node from the sidebar, then click the canvas to place it.</p></div>
+          <div id="tool-hint" class="tool-hint" hidden></div>
+          <div class="zoom">
+            <button class="icon-button" id="zoom-out" title="Zoom out" aria-label="Zoom out" data-icon="minus"></button>
+            <span id="zoom-level">100%</span>
+            <button class="icon-button" id="zoom-in" title="Zoom in" aria-label="Zoom in" data-icon="plus"></button>
+            <div class="toolbar-divider"></div>
+            <button class="icon-button" id="fit" title="Fit diagram (F)" aria-label="Fit diagram" data-icon="fit"></button>
+          </div>
+        </div>
+      </section>
+
+      <section class="simulation panel" aria-label="Simulation">
+        <div class="panel-header">
+          <div class="panel-title"><span class="panel-icon" data-icon="chart"></span><h2>Simulation</h2><span id="step-status" class="step-status">Step 0</span></div>
+          <div class="header-actions sim-actions">
+            <button class="icon-button" id="issues" title="Import and simulation issues" aria-label="Import and simulation issues" data-icon="warning" hidden></button>
+            <button class="icon-button" id="csv" title="Download CSV" aria-label="Download CSV" data-icon="download"></button>
+            <button class="icon-button" id="reset" title="Reset simulation" aria-label="Reset simulation" data-icon="reset"></button>
+            <button class="icon-button" id="forecast" title="Run a forecast" aria-label="Run a forecast" data-icon="forecast"></button>
+            <button class="button" id="step"><span data-icon="step"></span>Step</button>
+            <button class="button primary" id="play"><span data-icon="play"></span><span>Play</span></button>
+          </div>
+        </div>
+        <div id="plot"></div>
+        <div class="simulation-footer">
+          <div id="legend" class="legend"></div>
+          <div class="run-settings">
+            <label>Steps <input id="max-steps" type="number" min="1" max="9999" aria-label="Number of simulation steps"></label>
+            <label>Seed <input id="seed" value="42" aria-label="Simulation random seed" maxlength="50"></label>
+            <label>Speed <select id="speed" aria-label="Simulation speed"><option value="900">0.5×</option><option value="450" selected>1×</option><option value="225">2×</option><option value="110">4×</option></select></label>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <aside class="inspector panel" aria-label="Properties">
+      <div class="panel-header"><div class="panel-title"><span class="panel-icon" data-icon="sliders"></span><h2>Properties</h2></div></div>
+      <div id="properties"></div>
+    </aside>
+  </main>
+
+  <dialog id="import-dialog">
+    <div class="dialog-header"><h2>Import diagram</h2><button class="icon-button" data-close title="Close" aria-label="Close" data-icon="close"></button></div>
+    <div class="dialog-body">
+      <form id="url-form">
+        <label for="import-url">Public Machinations URL</label>
+        <div class="input-row"><input id="import-url" type="url" required placeholder="https://my.machinations.io/d/diagram/…"><button class="button primary" type="submit">Import</button></div>
+        <p class="field-note">Fetching a URL needs internet access. Your imported diagram runs locally.</p>
+      </form>
+      <div class="dialog-section">
+        <label for="import-file">Local diagram file</label>
+        <input id="import-file" type="file" accept=".json,.xml,.machinations,.svg,.html,.htm,.txt">
+        <p class="field-note">Open a project JSON, Machinations XML, or an SVG/HTML capture.</p>
+      </div>
+      <details>
+        <summary>Paste diagram data</summary>
+        <textarea id="import-text" rows="5" aria-label="Diagram data" placeholder="Paste JSON, XML, or the SVG outer HTML"></textarea>
+        <button class="button" id="paste-import">Import pasted data</button>
+      </details>
+      <p id="import-error" class="error" role="alert"></p>
+    </div>
+  </dialog>
+
+  <dialog id="help-dialog">
+    <div class="dialog-header"><h2>Help and shortcuts</h2><button class="icon-button" data-close title="Close" aria-label="Close" data-icon="close"></button></div>
+    <div class="dialog-body help-copy">
+      <p>Choose a node and click the canvas to add it. Choose a connection type, then click its origin and destination. State connections can attach to another connection.</p>
+      <p>Drag nodes to move them. Drag a connection label to bend its line, or change the endpoints in Properties.</p>
+      <p>In an interactive simulation, click an <b>On click</b> node to queue its action for the next step. Register values can also be adjusted in Properties.</p>
+      <dl><dt>Select / Pan</dt><dd>V / H</dd><dt>Temporary pan</dt><dd>Hold Space and drag</dd><dt>Fit diagram</dt><dd>F</dd><dt>Delete selection</dt><dd>Delete</dd><dt>Undo / Redo</dt><dd>Ctrl+Z / Ctrl+Shift+Z</dd></dl>
+      <button class="button" id="load-example">Load example</button>
+    </div>
+  </dialog>
+
+  <dialog id="issues-dialog">
+    <div class="dialog-header"><h2>Diagram issues</h2><button class="icon-button" data-close title="Close" aria-label="Close" data-icon="close"></button></div>
+    <div class="dialog-body"><ul id="issue-list"></ul></div>
+  </dialog>
+  <dialog id="forecast-dialog">
+    <div class="dialog-header"><h2>Forecast</h2><button class="icon-button" data-close title="Close" aria-label="Close" data-icon="close"></button></div>
+    <div class="dialog-body">
+      <form id="forecast-form">
+        <label for="forecast-count">Number of runs</label>
+        <div class="input-row"><input id="forecast-count" type="number" min="1" max="1000" value="100" required><button class="button primary" type="submit">Run</button></div>
+        <p class="field-note" id="forecast-info"></p>
+      </form>
+      <div id="forecast-result" aria-live="polite"></div>
+    </div>
+  </dialog>
+  <div id="toast" class="toast" role="status" hidden></div>
+</body>
+</html>
