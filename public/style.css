@@ -102,25 +102,26 @@ h3 {color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.1
 .node .caption {fill:#e4eeff;text-anchor:middle;font-size:13px;font-weight:550;paint-order:stroke;stroke:#0f1622;stroke-width:4;stroke-linejoin:round}
 .node .count {fill:#eaf4ff;text-anchor:middle;font-size:13px;font-weight:720;font-variant-numeric:tabular-nums}
 .node .register-value {fill:#efeaff}
+.node.register .node-bg {fill:color-mix(in srgb,var(--node-tint) 17%,#151f2e);stroke:var(--node-tint)}
+.node.register .register-value {fill:color-mix(in srgb,var(--node-tint) 45%,white)}
 .node .halo {fill:none;stroke:transparent;stroke-width:1.6;rx:10}
 .node.selected .halo,.node.connecting .halo,.node:focus-visible .halo {stroke:var(--mint);filter:drop-shadow(0 0 5px #71e5bc60)}
 .node.selected .caption {fill:var(--mint)}
 .node .trigger {fill:var(--node-tint,#a5b5ca);opacity:.95}
 .edge {cursor:pointer;outline:none}
-.edge .wire {stroke:var(--flow-tint,#7991a9);fill:none;stroke-width:1.75}
-.edge.state .wire {stroke:#aa98f5;stroke-dasharray:6 5}
+.edge .wire {stroke:var(--edge-tint,#7991a9);fill:none;stroke-width:1.75}
+.edge.state .wire {stroke-dasharray:6 5}
 .edge .wire-hit {stroke:transparent;stroke-width:13;fill:none}
-.edge .tip {fill:var(--flow-tint,#7991a9)}
-.edge.state .tip {fill:#aa98f5}
+.edge .tip {fill:var(--edge-tint,#7991a9)}
 .edge .wire-label {fill:#152132;stroke:#43526b;stroke-width:1}
-.edge.state .wire-label {fill:#221e39;stroke:#534878}
+.edge.state .wire-label {fill:color-mix(in srgb,var(--edge-tint) 12%,#152132);stroke:color-mix(in srgb,var(--edge-tint) 45%,#152132)}
 .edge .wire-text {font-size:11.5px;fill:#d3e1f0;text-anchor:middle;dominant-baseline:middle;font-weight:650}
-.edge.state .wire-text {fill:#d7cbff}
+.edge.state .wire-text {fill:color-mix(in srgb,var(--edge-tint) 30%,#e4eeff)}
 .edge.overwritten .wire-label {stroke:#559483}
 .edge.overwritten .wire-text {fill:var(--mint);font-variant-numeric:tabular-nums}
 .edge.gated:not(:is(.selected,.connecting,:hover,:focus-visible)) {opacity:.45}
-.edge.selected .wire,.edge.connecting .wire,.edge:hover .wire,.edge:focus-visible .wire,.edge.active .wire {stroke:var(--flow-tint,var(--mint));stroke-width:2.5}
-.edge.selected .tip,.edge.connecting .tip,.edge.active .tip {fill:var(--flow-tint,var(--mint))}
+.edge.selected .wire,.edge.connecting .wire,.edge:hover .wire,.edge:focus-visible .wire,.edge.active .wire {stroke:var(--edge-tint,var(--mint));stroke-width:2.5}
+.edge.selected .tip,.edge.connecting .tip,.edge.active .tip {fill:var(--edge-tint,var(--mint))}
 .edge.selected .wire-label {stroke:var(--mint)}
 .edge [data-label] {cursor:move}
 #alignment-guides,#selection-area {pointer-events:none}
@@ -178,6 +179,7 @@ h3 {color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.1
 .inspector-group input[type=color] {width:100%;padding:4px}
 .pair {display:grid;grid-template-columns:1fr 1fr;gap:8px}
 .field-note {color:var(--muted);font-size:11px;line-height:1.5;margin:-3px 0 10px}
+.field-note.selection-note {margin:0 14px 12px}
 .formula-field {font-family:"Cascadia Code",Consolas,monospace;font-size:12px}
 .sim-value {font-variant-numeric:tabular-nums;color:var(--mint)}
 .resource-amount {display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,.8fr) 27px;gap:5px;align-items:end}

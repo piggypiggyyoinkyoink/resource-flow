@@ -4,6 +4,7 @@ import {comparison} from './formula.mjs';
 import {importedEdgeShape, routePoints, containsBox, simplifyPoints, straightenCorners, snapAlignment, snapWaypoint, closestPathPosition, edgeLabelPoint} from './geometry.mjs';
 import {readDiagram} from './import.mjs';
 import {icon, innerIcon} from './icons.mjs';
+import {toggleItem, commonProperty, setProperty} from './selection.mjs';
 
 const $=id=>document.getElementById(id);
 const svgNS='http://www.w3.org/2000/svg';
@@ -265,8 +266,8 @@ function renderGraph() {
         svg('text',{x:0,y:1,class:'wire-text',text:label}),
       ]),
     ]);
-    const flowTint=e.type==='flow'&&resourceTints.get(e.source);
-    if (flowTint) tint(group,'--flow-tint',flowTint);
+    const edgeTint=e.type==='state'?(e.color||'#aa98f5'):resourceTints.get(e.source);
+    if (edgeTint) tint(group,'--edge-tint',edgeTint);
     edges.push(group);
   }
   $('edges').replaceChildren(...edges);
@@ -410,8 +411,8 @@ function action(label,handler) {
   return b;
 }
 const note=text=>el('p',{class:'field-note',text});
-const pane=(title,...children)=>el('div',{class:'inspector-group'},[el('h3',{text:title}),...children.filter(Boolean)]);
-const pair=(...children)=>el('div',{class:'pair'},children.filter(Boolean));
+const pane=(title,...children)=>children.some(Boolean)?el('div',{class:'inspector-group'},[el('h3',{text:title}),...children.filter(Boolean)]):null;
+const pair=(...children)=>children.some(Boolean)?el('div',{class:'pair'},children.filter(Boolean)):null;
 const resOpts=(all='')=>[...(all?[['',all]]:[]),...project.resources.map(r=>[r.id,r.name])];
 
 function header(title,sub,kind,onDelete) {
@@ -421,8 +422,9 @@ function header(title,sub,kind,onDelete) {
   if (onDelete) items.push(iconButton('trash','Delete '+sub.toLowerCase(),onDelete,'icon-button delete'));
   return el('div',{class:'selection-header'},items);
 }
-function select(kind,id) {
-  selected={kind,id};
+function select(kind,id,toggle=false) {
+  if (toggle) setSelection(toggleItem(selectionItems(),{kind,id}));
+  else selected={kind,id};
   renderGraph();renderSidebar();renderInspector();
 }
 function deleteSelection() {
@@ -455,32 +457,47 @@ function deleteSelection() {
     selected=null;
   });
 }
-function fields(item) {
-  const set=(key,value)=>change(()=>{item[key]=value;});
+function fields(items) {
+  const item=items[0], common=(...keys)=>keys.every(key=>commonProperty(items,key));
+  const edit=(mutator,options)=>change(()=>items.forEach(mutator),options);
+  const set=(key,value,options)=>change(()=>setProperty(items,key,value),options);
   return {
-    set,
-    field:(label,key,options)=>inputField(label,item[key],v=>set(key,v),options),
-    menu:(label,key,options)=>selectField(label,item[key],options,v=>set(key,v)),
-    flag:(label,key)=>check(label,item[key],v=>set(key,v)),
+    set,edit,common,
+    field:(label,key,options)=>common(key)?inputField(label,item[key],v=>set(key,v),options):null,
+    menu:(label,key,options)=>common(key)?selectField(label,item[key],options,v=>set(key,v)):null,
+    flag:(label,key)=>common(key)?check(label,item[key],v=>set(key,v)):null,
   };
 }
-function nodeInspector(n) {
-  const {set,field,menu,flag}=fields(n);
+function colorInspector(items,defaultColor) {
+  if (!commonProperty(items,'color')) return null;
+  const color=items[0].color.toLowerCase();
+  const presets=project.resources.map(r=>[r.color.toLowerCase(),r.name+' ('+r.color+')']);
+  const set=value=>change(()=>setProperty(items,'color',value),{preserveSim:true});
+  const picker=inputField('Custom colour',color||defaultColor,set,{type:'color'});
+  return pane('Appearance',
+    selectField('Colour preset',color?(presets.some(([value])=>value===color)?color:'custom'):'',
+      [['','Default colour'],...presets,['custom','Custom colour']],value=>{
+        if (value==='custom') picker.querySelector('input').click();
+        else set(value);
+      }),picker);
+}
+function nodeInspector(n,items=[n]) {
+  const {set,edit,common,field,menu,flag}=fields(items), multiple=items.length>1;
   const isPool=n.type==='pool',isRegister=n.type==='register';
   const registerOrEnd=isRegister||n.type==='end';
-  const live=el('div',{class:'field-note'},['Current value ',el('strong',{class:'sim-value',id:'inspector-value',text:valueText(sim.value(n.id))})]);
-  const inventory=n.initialResources.map((entry,i)=>el('div',{class:'resource-amount'},[
-    selectField('Resource',entry.resource,resOpts(),value=>change(()=>{entry.resource=value;})),
-    inputField('Quantity',entry.value,value=>change(()=>{entry.value=value;}),{mono:true}),
-    iconButton('close','Remove initial resource',()=>change(()=>{
-      n.initialResources.splice(i,1);
-      if (!n.initialResources.length) n.initial='0';
+  const live=multiple?null:el('div',{class:'field-note'},['Current value ',el('strong',{class:'sim-value',id:'inspector-value',text:valueText(sim.value(n.id))})]);
+  const inventory=common('initialResources')?n.initialResources.map((entry,i)=>el('div',{class:'resource-amount'},[
+    selectField('Resource',entry.resource,resOpts(),value=>edit(item=>{item.initialResources[i].resource=value;})),
+    inputField('Quantity',entry.value,value=>edit(item=>{item.initialResources[i].value=value;}),{mono:true}),
+    iconButton('close','Remove initial resource',()=>edit(item=>{
+      item.initialResources.splice(i,1);
+      if (!item.initialResources.length) item.initial='0';
     })),
-  ]));
-  const addStack=action('Add initial resource',()=>change(()=>{
-    if (!n.initialResources.length) n.initialResources.push({resource:n.resource,value:n.initial});
-    n.initialResources.push({resource:project.resources.find(r=>r.id!==n.resource)?.id||fallback,value:'0'});
-  }));
+  ])):[];
+  const addStack=common('initialResources','resource','initial')?action('Add initial resource',()=>edit(item=>{
+    if (!item.initialResources.length) item.initialResources.push({resource:item.resource,value:item.initial});
+    item.initialResources.push({resource:project.resources.find(r=>r.id!==item.resource)?.id||fallback,value:'0'});
+  })):null;
   const behavior=n.type==='text'?null:pane('Behavior',
     menu('Trigger','trigger',entries(triggers)),
     ['pool','delay','queue'].includes(n.type)?menu('Direction','direction',[['pull','Pull resources'],['push','Push resources']]):null,
@@ -489,15 +506,15 @@ function nodeInspector(n) {
     n.type==='converter'?menu('Conversion','conversion',[['single','Single per step'],['multiple','Multiple per step']]):null,
     n.type==='converter'?flag('Ignore disabled inputs','ignoreDisabled'):null,
     field('Condition','condition',{placeholder:'When true, e.g. step >= 2',mono:true}),
-    n.trigger==='click'?action(isRegister?'Increase next step':'Fire next step',()=>queueNode(n.id,1)):null,
-    n.trigger==='click'&&isRegister?action('Decrease next step',()=>queueNode(n.id,-1)):null,
+    !multiple&&n.trigger==='click'?action(isRegister?'Increase next step':'Fire next step',()=>queueNode(n.id,1)):null,
+    !multiple&&n.trigger==='click'&&isRegister?action('Decrease next step',()=>queueNode(n.id,-1)):null,
   );
   const resourceGroup=resourceNodeTypes.has(n.type)?pane('Resources',
     menu(n.type==='converter'?'Output resource':'Resource','resource',resOpts()),
-    isPool?pair(!n.initialResources.length?field('Initial quantity','initial',{mono:true}):null,
+    isPool?pair(items.every(item=>!item.initialResources.length)?field('Initial quantity','initial',{mono:true}):null,
       field('Capacity','capacity',{placeholder:'Unlimited',mono:true})):null,
     isPool?menu('Overflow','overflow',[['block','Block incoming'],['sink','Discard excess']]):null,
-    isPool?selectField('Accepted resource',n.resourceFilter[0]||'',resOpts('Any resource'),v=>set('resourceFilter',v?[v]:[])):null,
+    isPool&&common('resourceFilter')?selectField('Accepted resource',n.resourceFilter[0]||'',resOpts('Any resource'),v=>set('resourceFilter',v?[v]:[])):null,
     isPool?live:null,...inventory,isPool?addStack:null,
   ):null;
   const formulaGroup=registerOrEnd||['delay','queue'].includes(n.type)?pane('Formula',
@@ -509,60 +526,67 @@ function nodeInspector(n) {
     ['delay','queue'].includes(n.type)?note('The output connection controls the delay when connected.'):null,
   ):null;
   return [
-    header(n.label,kinds[n.type],n.type,deleteSelection),
+    header(multiple?items.length+' nodes selected':n.label,kinds[n.type],n.type,deleteSelection),
+    multiple?el('p',{class:'field-note selection-note',text:'Changes apply to all selected nodes. Only matching properties are shown.'}):null,
     pane('General',field('Label','label',n.type==='text'?{multiline:true}:{}),
       n.type==='unknown'||n.type==='trader'?menu('Node type','type',entries(kinds)):null),
-    behavior,resourceGroup,formulaGroup,
+    isRegister?colorInspector(items,nodeColor(n)):null,behavior,resourceGroup,formulaGroup,
     pane('Notes',field('Note','note',{multiline:true,placeholder:'Add context for this node'})),
   ].filter(Boolean);
 }
-function edgeInspector(e) {
-  const {set,field,flag}=fields(e);
+function edgeInspector(e,items=[e]) {
+  const {set,edit,common,field,menu,flag}=fields(items), multiple=items.length>1;
   const state=e.type==='state';
   const components=[
     ...project.nodes.filter(n=>n.type!=='text').map(n=>[n.id,n.label+' · '+kinds[n.type]]),
-    ...(state?project.edges.filter(x=>x!==e).map(x=>[x.id,x.label||edgeSummary(x)]):[]),
+    ...(state?project.edges.filter(x=>!items.includes(x)).map(x=>[x.id,x.label||edgeSummary(x)]):[]),
   ];
-  const endOptions=key=>components.filter(([id])=>id!==e[key==='source'?'target':'source']||project.nodes.some(n=>n.id===id));
+  const endOptions=key=>components.filter(([id])=>items.every(item=>id!==item[key==='source'?'target':'source'])||project.nodes.some(n=>n.id===id));
   const formulaLabel=state?e.mode==='input'?'Variable name':e.mode==='enable'||e.mode==='triggerIf'?'Comparison':'Formula':'Amount formula';
-  const reconnect=(key,value)=>change(()=>{e[key]=value;e.route=null;});
+  const reconnect=(key,value)=>edit(item=>{item[key]=value;item.route=null;});
   return [
-    header(e.label||edgeSummary(e),state?'State connection':'Resource connection',e.type,deleteSelection),
-    pane('Endpoints',selectField('Origin',e.source,endOptions('source'),v=>reconnect('source',v)),
-      selectField('Destination',e.target,endOptions('target'),v=>reconnect('target',v)),field('Label','label',{placeholder:'Optional'})),
+    header(multiple?items.length+' connections selected':e.label||edgeSummary(e),state?'State connection':'Resource connection',e.type,deleteSelection),
+    multiple?el('p',{class:'field-note selection-note',text:'Changes apply to all selected connections. Only matching properties are shown.'}):null,
+    state?colorInspector(items,e.color||'#aa98f5'):null,
+    pane('Endpoints',common('source')?selectField('Origin',e.source,endOptions('source'),v=>reconnect('source',v)):null,
+      common('target')?selectField('Destination',e.target,endOptions('target'),v=>reconnect('target',v)):null,field('Label','label',{placeholder:'Optional'})),
     pane('Behavior',
-      state?selectField('Type',e.mode,entries(stateKinds),v=>{
-        change(()=>{
-          e.mode=v;
+      state&&common('mode')?selectField('Type',e.mode,entries(stateKinds),v=>{
+        edit(item=>{
+          item.mode=v;
           const defaults={trigger:'*',input:'a',enable:'> 0',triggerIf:'> 0',add:'+1',multiply:'10%',split:'1'};
-          e.formula=defaults[v]??'';
-          if (v==='trigger') e.triggerOn='change';
-          else delete e.triggerOn;
+          item.formula=defaults[v]??'';
+          if (v==='trigger') item.triggerOn='change';
+          else delete item.triggerOn;
         });
       }):null,
-      state&&e.mode==='trigger'?selectField('Trigger on',e.triggerOn,entries(triggerModes),v=>change(()=>{
-        e.triggerOn=v;
-        e.formula=v==='chance'?'100':'*';
+      state&&common('mode','triggerOn')&&e.mode==='trigger'?selectField('Trigger on',e.triggerOn,entries(triggerModes),v=>edit(item=>{
+        item.triggerOn=v;
+        item.formula=v==='chance'?'100':'*';
       })):null,
-      state&&e.mode==='trigger'&&e.triggerOn==='chance'?field('Chance (%)','formula',{type:'number',min:0,max:100,step:'any'}):null,
-      state&&['trigger','overwrite'].includes(e.mode)?null:field(formulaLabel,'formula',{mono:true,placeholder:state?'>= 3':'1, 2D6, 50%, or all'}),
-      state&&e.mode==='overwrite'?note("Copies the origin's current value."):null,
-      state?null:pair(field('Interval','interval',{mono:true}),e.formula.endsWith('%')?field('Amount on success','chanceAmount',{mono:true}):null),
+      state&&common('mode','triggerOn')&&e.mode==='trigger'&&e.triggerOn==='chance'?field('Chance (%)','formula',{type:'number',min:0,max:100,step:'any'}):null,
+      state&&(!common('mode')||['trigger','overwrite'].includes(e.mode))?null:field(formulaLabel,'formula',{mono:true,placeholder:state?'>= 3':'1, 2D6, 50%, or all'}),
+      state&&common('mode')&&e.mode==='overwrite'?note("Copies the origin's current value."):null,
+      state?null:pair(field('Interval','interval',{mono:true}),items.every(item=>item.formula.endsWith('%'))?field('Amount on success','chanceAmount',{mono:true}):null),
       state?null:pair(field('Minimum','min',{mono:true}),field('Maximum','max',{mono:true})),
-      state?null:selectField('Transfer timing',e.transfer,[['interval','Flow'],['instant','Instant']],v=>set('transfer',v)),
+      state?null:menu('Transfer timing','transfer',[['interval','Flow'],['instant','Instant']]),
       state?null:flag('Allow decimals','decimals'),state?null:flag('Shuffle resource types','shuffle'),
-      selectField('Resource filter',e.resource,resOpts('Any resource'),v=>set('resource',v)),
+      menu('Resource filter','resource',resOpts('Any resource')),
       field('Condition','condition',{placeholder:'e.g. step >= 2',mono:true})),
     pane('Notes',field('Note','note',{multiline:true,placeholder:'Add context for this connection'})),
-  ];
+  ].filter(Boolean);
 }
 function renderInspector() {
   let list=[];
   if (selected?.kind==='multiple') {
     const nodes=selected.items.filter(item=>item.kind==='node').length;
     const edges=selected.items.length-nodes;
-    list=[header(selected.items.length+' objects selected','Selection','cursor',deleteSelection),
-      pane('Selection',note(nodes+' nodes and '+edges+' connections'))];
+    const kind=selected.items[0].kind;
+    const items=selected.items.map(item=>(item.kind==='node'?project.nodes:project.edges).find(object=>object.id===item.id));
+    if (items.every(Boolean)&&selected.items.every(item=>item.kind===kind)&&items.every(item=>item.type===items[0].type)) {
+      list=kind==='node'?nodeInspector(items[0],items):edgeInspector(items[0],items);
+    } else list=[header(selected.items.length+' objects selected','Selection','cursor',deleteSelection),
+      pane('Selection',note(nodes+' nodes and '+edges+' connections'),note('Select objects of the same type to edit their matching properties together.'))];
   } else if (selected?.kind==='node') {
     const node=project.nodes.find(n=>n.id===selected.id);
     if (node) list=nodeInspector(node);
@@ -728,6 +752,10 @@ diagram.addEventListener('pointerdown',event=>{
     const n=makeNode(tool.value,{x:p.x+snap.dx,y:p.y+snap.dy});
     alignmentGuides=[];
     change(()=>{project.nodes.push(n);selected={kind:'node',id:n.id};tool={kind:'select'};});
+    return;
+  } else if (tool.kind==='select'&&(event.ctrlKey||event.metaKey)&&(hit||handle)) {
+    select(hit?.dataset.kind||'edge',hit?.dataset.id||handle.dataset.edge,true);
+    event.preventDefault();
     return;
   } else if (handle&&tool.kind==='select') {
     const target=project.edges.find(e=>e.id===handle.dataset.edge);

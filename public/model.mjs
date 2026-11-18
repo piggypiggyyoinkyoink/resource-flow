@@ -36,7 +36,7 @@ export function makeNode(type, props = {}) {
 
 export function makeEdge(type, source, target, props = {}) {
   const edge = {
-    id: id('e'), type, source, target, label: '', formula: type === 'state' ? '> 0' : '1',
+    id: id('e'), type, source, target, label: '', color: '', formula: type === 'state' ? '> 0' : '1',
     condition: '', mode: 'enable', chanceAmount: '1', interval: '1', transfer: 'interval',
     decimals: false, min: '', max: '', resource: '', shuffle: false, bend: 0, labelPosition: null, note: '', ...props,
   };
@@ -108,7 +108,7 @@ export function normalize(raw) {
     const e = object(item);
     const type = e.type === 'state' ? 'state' : 'flow';
     return makeEdge(type, string(e.source), string(e.target), {
-      id: takeId(e.id), label: string(e.label), formula: string(e.formula, type === 'state' ? '> 0' : '1'),
+      id: takeId(e.id), label: string(e.label), color:color(e.color,''), formula: string(e.formula, type === 'state' ? '> 0' : '1'),
       mode: Object.hasOwn(stateKinds, e.mode) || e.mode==='reverse' ? e.mode : 'enable', condition: string(e.condition),
       triggerOn: e.triggerOn,
       interval: string(e.interval, '1'), transfer: choice(e.transfer, ['interval','instant'], 'interval'),
