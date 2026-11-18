@@ -34,11 +34,12 @@ Choose a node tool and click the canvas to add it to the diagram. Supported Mach
 
 **Ctrl+left-click** adds or removes a node or connector from the selection (**Cmd+click** on macOS). When the selection contains nodes or connectors of the same type, Properties shows their matching settings. Changing a setting applies it to every selected object in one undoable edit; settings with different values are hidden.
 
-Registers and State links have an **Appearance** section in Properties. Choose one of the diagram's resource colours, pick a custom colour, or restore the default. Resource colour presets stay linked: changing a resource's colour also recolours Registers and State links using its preset. Choosing a custom colour removes that link. State links default to graphite grey, and imported State links keep the original diagram's colours. Colour changes affect appearance only.
-
 ### Connectors
 To add connectors, choose **Resource flow** or **State link**, then click the origin and destination nodes. A state link can attach to another connection. Select a connector to display its waypoints. Nearby right angles snap into place. Hold **Alt** while dragging a waypoint to position it freely. Drag a connector label to slide it along the line; its position follows the connector when its endpoints or waypoints move. Select a component to change its properties, reconnect it, or delete it.
 A resource connection's amount can be a number, an expression, a dice roll such as `2D6`, a chance such as `25%`, or `all` when it leaves a pool. Use the **Parameters** section for reusable named values and expressions. State links of type **Register input** let you supply variables explicitly. 
+
+### Appearance
+Register nodes and State link connectors have an **Appearance** section in Properties. Choose one of the diagram's resource colours, pick a custom colour, or restore the default. Resource colour presets stay linked: changing a resource's colour also recolours Registers and State links using its preset. Choosing a custom colour removes that link.Colour changes affect appearance only.
 
 ### Expressions
 The supported expression language includes scalar arithmetic and comparisons, conditional expressions, common math functions (e.g. `floor`, `ceil`, `mod`), and random functions such as `randomInt` and `pickRandom`. A formula that evaluates to infinity or NaN yields zero. 

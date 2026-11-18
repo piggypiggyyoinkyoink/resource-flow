@@ -13,7 +13,7 @@ const storageKey='resource-flow-project-v1';
 const plotTypes=new Set(['pool','register','delay','queue','converter']);
 const resourceNodeTypes=new Set(['pool','source','sink','converter','gate','delay','queue','trader']);
 const triggers={passive:'Passive',auto:'Auto',click:'On click',enable:'On enable',start:'On start',agent:'Agentic'};
-const nodeColors={register:'#b5a4ff',end:'#f3a3ae'};
+const nodeColors={register:stateLinkColor,end:'#f3a3ae'};
 const entries=Object.entries;
 const shorten=(s,len)=>s.length>len?s.slice(0,len-1)+'…':s;
 const clamp=(n,min,max)=>Math.min(max,Math.max(min,n));
@@ -160,7 +160,7 @@ function renderTools() {
   $('undo').disabled=!undo.length;$('redo').disabled=!redo.length;
 }
 const resourceColor=id=>project.resources.find(r=>r.id===id)?.color||palette[6];
-const nodeColor=n=>componentColor(n,project.resources,n.resource!==fallback?resourceColor(n.resource):nodeColors[n.type]||palette[6]);
+const nodeColor=n=>componentColor(n,project.resources,n.type!=='register'&&n.resource!==fallback?resourceColor(n.resource):nodeColors[n.type]||palette[6]);
 function sideRow(kind,id,label,mark) {
   const arrow=el('span');arrow.innerHTML=icon('chevron');
   const row=el('button',{class:'side-item'+(selected?.kind===kind&&selected.id===id?' is-active':''),title:label},
