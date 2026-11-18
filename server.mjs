@@ -10,6 +10,7 @@ const files = new Map([
   ['/sim.mjs', ['sim.mjs','text/javascript']], ['/formula.mjs', ['formula.mjs','text/javascript']],
   ['/geometry.mjs', ['geometry.mjs','text/javascript']],
   ['/selection.mjs', ['selection.mjs','text/javascript']],
+  ['/colors.mjs', ['colors.mjs','text/javascript']],
   ['/import.mjs', ['import.mjs','text/javascript']], ['/icons.mjs', ['icons.mjs','text/javascript']],
 ]);
 

@@ -1,4 +1,5 @@
 import {normalizeRoute, point} from './geometry.mjs';
+import {normalizeAppearance} from './colors.mjs';
 
 export const kinds = {
   source: 'Source', pool: 'Pool', sink: 'Sink', gate: 'Gate', converter: 'Converter',
@@ -24,7 +25,7 @@ export const color = (value, otherwise = palette[0]) => /^#[0-9a-f]{6}$/i.test(v
 
 export function makeNode(type, props = {}) {
   const node = {
-    id: id('n'), type, label: kinds[type], x: 0, y: 0, color: '', resource: fallback,
+    id: id('n'), type, label: kinds[type], x: 0, y: 0, color: '', colorResource: '', resource: fallback,
     trigger: type === 'source' ? 'auto' : 'passive',
     direction: ['source', 'delay', 'queue'].includes(type) ? 'push' : 'pull',
     all: false, initial: '0', capacity: '', min: '', max: '', formula: '', condition: '',
@@ -36,7 +37,7 @@ export function makeNode(type, props = {}) {
 
 export function makeEdge(type, source, target, props = {}) {
   const edge = {
-    id: id('e'), type, source, target, label: '', color: '', formula: type === 'state' ? '> 0' : '1',
+    id: id('e'), type, source, target, label: '', color: '', colorResource: '', formula: type === 'state' ? '> 0' : '1',
     condition: '', mode: 'enable', chanceAmount: '1', interval: '1', transfer: 'interval',
     decimals: false, min: '', max: '', resource: '', shuffle: false, bend: 0, labelPosition: null, note: '', ...props,
   };
@@ -92,7 +93,7 @@ export function normalize(raw) {
     return makeNode(type, {
       id: takeId(n.id), label: string(n.label, kinds[type]), x: number(n.x), y: number(n.y),
       labelOffset:point(n.labelOffset),
-      resource: resourceIds.has(n.resource) ? n.resource : fallback, color: color(n.color, ''),
+      resource: resourceIds.has(n.resource) ? n.resource : fallback, ...normalizeAppearance(n,project.resources,type==='register'),
       trigger: choice(n.trigger, ['auto','passive','click','enable','start','agent'], 'passive'),
       direction: choice(n.direction, ['push','pull'], type === 'source' ? 'push' : 'pull'),
       all: !!n.all, initial: string(n.initial, '0'), capacity: string(n.capacity), min: string(n.min),
@@ -108,7 +109,7 @@ export function normalize(raw) {
     const e = object(item);
     const type = e.type === 'state' ? 'state' : 'flow';
     return makeEdge(type, string(e.source), string(e.target), {
-      id: takeId(e.id), label: string(e.label), color:color(e.color,''), formula: string(e.formula, type === 'state' ? '> 0' : '1'),
+      id: takeId(e.id), label: string(e.label), ...normalizeAppearance(e,project.resources,type==='state'), formula: string(e.formula, type === 'state' ? '> 0' : '1'),
       mode: Object.hasOwn(stateKinds, e.mode) || e.mode==='reverse' ? e.mode : 'enable', condition: string(e.condition),
       triggerOn: e.triggerOn,
       interval: string(e.interval, '1'), transfer: choice(e.transfer, ['interval','instant'], 'interval'),

@@ -5,6 +5,7 @@ import {importedEdgeShape, routePoints, containsBox, simplifyPoints, straightenC
 import {readDiagram} from './import.mjs';
 import {icon, innerIcon} from './icons.mjs';
 import {toggleItem, commonProperty, setProperty} from './selection.mjs';
+import {stateLinkColor, componentColor, setColorPreset, setCustomColor, setResourceColor} from './colors.mjs';
 
 const $=id=>document.getElementById(id);
 const svgNS='http://www.w3.org/2000/svg';
@@ -158,7 +159,7 @@ function renderTools() {
   $('undo').disabled=!undo.length;$('redo').disabled=!redo.length;
 }
 const resourceColor=id=>project.resources.find(r=>r.id===id)?.color||palette[6];
-const nodeColor=n=>n.color||(n.resource!==fallback?resourceColor(n.resource):nodeColors[n.type]||palette[6]);
+const nodeColor=n=>componentColor(n,project.resources,n.resource!==fallback?resourceColor(n.resource):nodeColors[n.type]||palette[6]);
 function sideRow(kind,id,label,mark) {
   const arrow=el('span');arrow.innerHTML=icon('chevron');
   const row=el('button',{class:'side-item'+(selected?.kind===kind&&selected.id===id?' is-active':''),title:label},
@@ -266,7 +267,7 @@ function renderGraph() {
         svg('text',{x:0,y:1,class:'wire-text',text:label}),
       ]),
     ]);
-    const edgeTint=e.type==='state'?(e.color||'#aa98f5'):resourceTints.get(e.source);
+    const edgeTint=e.type==='state'?componentColor(e,project.resources,stateLinkColor):resourceTints.get(e.source);
     if (edgeTint) tint(group,'--edge-tint',edgeTint);
     edges.push(group);
   }
@@ -433,6 +434,8 @@ function deleteSelection() {
   if (kind==='resource'&&id===fallback) return;
   change(()=>{
     if (kind==='resource') {
+      const linked=[...project.nodes,...project.edges].filter(item=>item.colorResource===id);
+      for (const item of linked) setCustomColor([item],componentColor(item,project.resources));
       project.resources=project.resources.filter(r=>r.id!==id);
       for (const n of project.nodes) {
         if (n.resource===id) n.resource=fallback;
@@ -469,16 +472,21 @@ function fields(items) {
   };
 }
 function colorInspector(items,defaultColor) {
-  if (!commonProperty(items,'color')) return null;
-  const color=items[0].color.toLowerCase();
-  const presets=project.resources.map(r=>[r.color.toLowerCase(),r.name+' ('+r.color+')']);
-  const set=value=>change(()=>setProperty(items,'color',value),{preserveSim:true});
-  const picker=inputField('Custom colour',color||defaultColor,set,{type:'color'});
+  if (!commonProperty(items,'color')||!commonProperty(items,'colorResource')) return null;
+  const item=items[0], color=componentColor(item,project.resources,defaultColor);
+  const presets=project.resources.map(r=>['resource:'+r.id,r.name+' ('+r.color+')']);
+  const set=value=>change(()=>setCustomColor(items,value),{preserveSim:true});
+  const picker=inputField('Custom colour',color,set,{type:'color'});
   return pane('Appearance',
-    selectField('Colour preset',color?(presets.some(([value])=>value===color)?color:'custom'):'',
+    selectField('Colour preset',item.colorResource?'resource:'+item.colorResource:item.color?'custom':'',
       [['','Default colour'],...presets,['custom','Custom colour']],value=>{
-        if (value==='custom') picker.querySelector('input').click();
-        else set(value);
+        if (value==='custom') {
+          set(color);
+          $('properties').querySelector('input[type=color]').click();
+        } else if (value.startsWith('resource:')) {
+          const resource=project.resources.find(r=>r.id===value.slice(9));
+          if (resource) change(()=>setColorPreset(items,resource),{preserveSim:true});
+        } else set('');
       }),picker);
 }
 function nodeInspector(n,items=[n]) {
@@ -547,7 +555,7 @@ function edgeInspector(e,items=[e]) {
   return [
     header(multiple?items.length+' connections selected':e.label||edgeSummary(e),state?'State connection':'Resource connection',e.type,deleteSelection),
     multiple?el('p',{class:'field-note selection-note',text:'Changes apply to all selected connections. Only matching properties are shown.'}):null,
-    state?colorInspector(items,e.color||'#aa98f5'):null,
+    state?colorInspector(items,stateLinkColor):null,
     pane('Endpoints',common('source')?selectField('Origin',e.source,endOptions('source'),v=>reconnect('source',v)):null,
       common('target')?selectField('Destination',e.target,endOptions('target'),v=>reconnect('target',v)):null,field('Label','label',{placeholder:'Optional'})),
     pane('Behavior',
@@ -597,7 +605,7 @@ function renderInspector() {
     const r=project.resources.find(r=>r.id===selected.id);
     if (r) list=[header(r.name,'Resource','pool',r.id===fallback?null:deleteSelection),
       pane('Resource',inputField('Name',r.name,value=>change(()=>{r.name=value.trim()||'Resource';})),
-        inputField('Color',r.color,value=>change(()=>{r.color=value;},{preserveSim:true}),{type:'color'}),
+        inputField('Color',r.color,value=>change(()=>{setResourceColor(project,r,value);},{preserveSim:true}),{type:'color'}),
         note(project.nodes.filter(n=>n.resource===r.id).length+' nodes use this resource.'))];
   } else if (selected?.kind==='parameter') {
     const v=project.variables[selected.id];

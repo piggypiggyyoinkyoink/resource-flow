@@ -63,7 +63,7 @@ function devtools(browser) {
   });
 }
 
-function previewPaths(expectedPath) {
+export function previewPaths(expectedPath) {
   if (location.origin!=='https://my.machinations.io' || location.pathname!==expectedPath) return [];
   return Array.from(document.querySelectorAll('svg.m-ground-work-svg .m-connection-line')).flatMap(path=>{
     const id = path.closest('[data-nodeid]')?.getAttribute('data-nodeid');
@@ -74,8 +74,9 @@ function previewPaths(expectedPath) {
     const end = path.getPointAtLength(length);
     const prev = path.getPointAtLength(Math.max(0,length-1));
     const center = path.getPointAtLength(length/2);
+    const color = getComputedStyle(path).stroke;
     const {x,y,width,height} = path.getBBox();
-    return [{id,d,end:{x:end.x,y:end.y},center:{x:center.x,y:center.y},
+    return [{id,d,color,end:{x:end.x,y:end.y},center:{x:center.x,y:center.y},
       angle:Math.atan2(end.y-prev.y,end.x-prev.x)*180/Math.PI,
       bounds:[{x,y},{x:x+width,y:y+height}]}];
   });

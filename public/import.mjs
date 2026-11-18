@@ -1,4 +1,5 @@
 import {blank, makeNode, makeEdge, makeResource, fallback, color, normalize, kinds, variableName} from './model.mjs';
+import {importedColor} from './colors.mjs';
 
 const cellTypes = {
   mxSourceShapeCell:'source', mxPoolShapeCell:'pool', mxDrainShapeCell:'sink', mxSinkShapeCell:'sink',
@@ -191,6 +192,7 @@ function xmlModel(xml, title, origin, rendered) {
     };
     project.edges.push(makeEdge(state?'state':'flow',source,target,{
       id:take(el,'id'), label, formula, mode, triggerOn, route, interval:take(el,'interval')||'1', chanceAmount:val2||'1',
+      color:state?importedColor(/(?:^|;)\s*strokeColor\s*=\s*([^;]+)/i.exec(take(el,'style'))?.[1]||take(el,'strokeColor','lineColor','color')):'',
       resource:filter(el), condition:take(el,'condition'), decimals:checked(take(el,'allowDecimals')),
       min:bounds(el,'minValue'), max:bounds(el,'maxValue'), shuffle:checked(take(el,'shuffleSource')),
       transfer:/instant/.test(take(el,'resourceTransfer','transfer'))?'instant':'interval',
@@ -224,6 +226,8 @@ function attachRenderedRoutes(project, rendered) {
   let missing=0;
   for (const edge of project.edges) {
     const path=paths.get(edge.id), source=anchors.get(edge.source), target=anchors.get(edge.target);
+    const tint=importedColor(path?.color);
+    if (edge.type==='state'&&tint) edge.color=tint;
     if (path && source && target) edge.route.rendered={...path,source,target};
     else missing++;
   }
@@ -387,6 +391,7 @@ function svgModel(input,title) {
     const [source,target]=endpoints;
     project.edges.push(makeEdge(state?'state':'flow',source,target,{
       id:path.id, mode, formula, triggerOn, bend:Math.max(-260,Math.min(260,bend)),
+      color:state?importedColor(take(line,'stroke')||take(el,'stroke')):'',
       resource:filterName?ensure('svg_'+variableName(filterName),filterName):'',
     }));
   }
