@@ -38,7 +38,7 @@ export function makeEdge(type, source, target, props = {}) {
   const edge = {
     id: id('e'), type, source, target, label: '', formula: type === 'state' ? '> 0' : '1',
     condition: '', mode: 'enable', chanceAmount: '1', interval: '1', transfer: 'interval',
-    decimals: false, min: '', max: '', resource: '', shuffle: false, bend: 0, note: '', ...props,
+    decimals: false, min: '', max: '', resource: '', shuffle: false, bend: 0, labelPosition: null, note: '', ...props,
   };
   if (edge.type==='state' && edge.mode==='overwrite') edge.formula='';
   if (edge.type==='state' && (edge.mode==='trigger' || edge.mode==='reverse')) {
@@ -114,6 +114,7 @@ export function normalize(raw) {
       interval: string(e.interval, '1'), transfer: choice(e.transfer, ['interval','instant'], 'interval'),
       chanceAmount: string(e.chanceAmount, '1'), decimals: !!e.decimals, min: string(e.min), max: string(e.max),
       resource: resourceIds.has(e.resource) ? e.resource : '', shuffle: !!e.shuffle, bend: number(e.bend),
+      labelPosition:Number.isFinite(e.labelPosition)?Math.max(0,Math.min(1,e.labelPosition)):null,
       route:normalizeRoute(e.route), note: string(e.note),
     });
   });

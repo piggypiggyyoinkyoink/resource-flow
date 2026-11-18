@@ -1,7 +1,68 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {blank, makeEdge, makeNode, normalize} from '../public/model.mjs';
-import {importedEdgeShape, routePoints, containsBox, simplifyPoints, straightenCorners, snapAlignment, snapWaypoint} from '../public/geometry.mjs';
+import {importedEdgeShape, routePoints, containsBox, simplifyPoints, straightenCorners, snapAlignment, snapWaypoint, closestPathPosition} from '../public/geometry.mjs';
+
+function polylinePath(points) {
+  const lengths=points.slice(1).map((p,i)=>Math.hypot(p.x-points[i].x,p.y-points[i].y));
+  return {
+    getTotalLength:()=>lengths.reduce((a,b)=>a+b,0),
+    getPointAtLength(offset) {
+      for (let i=0;i<lengths.length;i++) {
+        if (lengths[i]&&offset<=lengths[i]) {
+          const a=points[i], b=points[i+1], t=offset/lengths[i];
+          return {x:a.x+(b.x-a.x)*t,y:a.y+(b.y-a.y)*t};
+        }
+        offset-=lengths[i];
+      }
+      return points.at(-1);
+    },
+  };
+}
+
+test('connector labels project onto horizontal, vertical and diagonal lines and stop at endpoints',()=>{
+  const horizontal=polylinePath([{x:0,y:0},{x:100,y:0}]);
+  assert.ok(Math.abs(closestPathPosition(horizontal,{x:73,y:90})-.73)<.00001);
+  assert.equal(closestPathPosition(horizontal,{x:-50,y:30}),0);
+  assert.equal(closestPathPosition(horizontal,{x:180,y:-80}),1);
+  const vertical=polylinePath([{x:20,y:0},{x:20,y:100}]);
+  assert.ok(Math.abs(closestPathPosition(vertical,{x:80,y:37})-.37)<.00001);
+  const diagonal=polylinePath([{x:0,y:0},{x:100,y:100}]);
+  assert.ok(Math.abs(closestPathPosition(diagonal,{x:90,y:10})-.5)<.00001);
+});
+
+test('connector labels follow routed bends instead of the straight line between endpoints',()=>{
+  const path=polylinePath([{x:0,y:0},{x:100,y:0},{x:100,y:100}]);
+  assert.ok(Math.abs(closestPathPosition(path,{x:130,y:60})-.8)<.00001);
+  assert.ok(Math.abs(closestPathPosition(path,{x:40,y:-30})-.2)<.00001);
+  assert.ok(Math.abs(closestPathPosition(path,{x:120,y:-20})-.5)<.00001);
+  assert.equal(closestPathPosition(polylinePath([{x:10,y:10},{x:10,y:10}]),{x:50,y:60}),0);
+});
+
+test('connector label projection refines points on the actual curve',()=>{
+  const path={
+    getTotalLength:()=>Math.PI*100,
+    getPointAtLength:s=>({x:100*Math.cos(s/100),y:100*Math.sin(s/100)}),
+  };
+  const position=closestPathPosition(path,{x:150,y:150});
+  assert.ok(Math.abs(position-.25)<.00001);
+  const p=path.getPointAtLength(position*path.getTotalLength());
+  assert.ok(Math.abs(Math.hypot(p.x,p.y)-100)<1e-9);
+});
+
+test('label positions survive saving and reopening without changing connector geometry',()=>{
+  const project=blank();
+  project.nodes=[makeNode('source',{id:'a',x:0,y:0}),makeNode('pool',{id:'b',x:200,y:100})];
+  project.edges=[makeEdge('flow','a','b',{bend:80,labelPosition:.73})];
+  const saved=normalize(JSON.parse(JSON.stringify(project)));
+  assert.equal(saved.edges[0].labelPosition,.73);
+  assert.equal(saved.edges[0].bend,80);
+  assert.equal(saved.edges[0].route,null);
+  for (const [input,expected] of [[undefined,null],[null,null],[NaN,null],[-1,0],[2,1],[0,0],[1,1]]) {
+    project.edges[0].labelPosition=input;
+    assert.equal(normalize(project).edges[0].labelPosition,expected);
+  }
+});
 
 test('imported paths and register label positions survive saving and reopening',()=>{
   const source={x:20,y:25}, target={x:160,y:90};

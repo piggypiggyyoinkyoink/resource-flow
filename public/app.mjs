@@ -1,7 +1,7 @@
 import {blank, example, normalize, makeNode, makeEdge, makeResource, kinds, stateKinds, triggerModes, palette, fallback} from './model.mjs';
 import {Simulation} from './sim.mjs';
 import {comparison} from './formula.mjs';
-import {importedEdgeShape, routePoints, containsBox, simplifyPoints, straightenCorners, snapAlignment, snapWaypoint} from './geometry.mjs';
+import {importedEdgeShape, routePoints, containsBox, simplifyPoints, straightenCorners, snapAlignment, snapWaypoint, closestPathPosition} from './geometry.mjs';
 import {readDiagram} from './import.mjs';
 import {icon, innerIcon} from './icons.mjs';
 
@@ -180,6 +180,15 @@ let edgeLayoutCache=new Map();
 function edgeLayout() {
   const points=new Map(project.nodes.map(n=>[n.id,{x:n.x,y:n.y,r:n.type==='text'?8:28}]));
   const edges=new Map(project.edges.map(e=>[e.id,e])), lines=new Map();
+  function remember(edge,shape) {
+    if (edge.labelPosition!=null) {
+      const path=svg('path',{d:shape.d});
+      const p=path.getPointAtLength(path.getTotalLength()*edge.labelPosition);
+      shape.mid={x:p.x,y:p.y};
+    }
+    lines.set(edge.id,shape);
+    return shape;
+  }
   function layout(edge,chain=new Set()) {
     if (lines.has(edge.id)) return lines.get(edge.id);
     if (chain.has(edge.id)) return null;
@@ -189,10 +198,7 @@ function edgeLayout() {
     chain.delete(edge.id);
     if (!a||!b) return null;
     const imported=edge.route&&importedEdgeShape(edge.route,a,b);
-    if (imported) {
-      lines.set(edge.id,imported);
-      return imported;
-    }
+    if (imported) return remember(edge,imported);
     let start,end,control;
     if (edge.source===edge.target) {
       start={x:a.x+19,y:a.y-19};end={x:a.x-19,y:a.y-19};
@@ -210,8 +216,7 @@ function edgeLayout() {
     const mid={x:(start.x+end.x)/4+control.x/2,y:(start.y+end.y)/4+control.y/2};
     const result={d:'M '+start.x+' '+start.y+' Q '+control.x+' '+control.y+' '+end.x+' '+end.y,mid,end,
       angle:Math.atan2(end.y-control.y,end.x-control.x)*180/Math.PI,a,b};
-    lines.set(edge.id,result);
-    return result;
+    return remember(edge,result);
   }
   for (const edge of project.edges) layout(edge);
   return lines;
@@ -256,7 +261,7 @@ function renderGraph() {
     const group=svg('g',{class:css,'data-id':e.id,'data-kind':'edge',tabindex:0,role:'button','aria-label':name},[
       svg('title',{text:name}),svg('path',{d,class:'wire'}),svg('path',{d,class:'wire-hit'}),
       svg('path',{d:'M 0 0 L -9 4 L -7 0 L -9 -4 Z',class:'tip',transform:'translate('+end.x+' '+end.y+') rotate('+angle+')'}),
-      svg('g',{transform:'translate('+mid.x+' '+mid.y+')','data-bend':''},[
+      svg('g',{transform:'translate('+mid.x+' '+mid.y+')','data-label':''},[
         svg('rect',{x:-width/2,y:-10,width,height:20,rx:6,class:'wire-label'}),
         svg('text',{x:0,y:1,class:'wire-text',text:label}),
       ]),
@@ -693,7 +698,7 @@ function selectionBounds() {
     bounds.push({kind:'node',id:node.id,box:{x:node.x+box.x,y:node.y+box.y,width:box.width,height:box.height}});
   }
   for (const group of $('edges').children) {
-    const mid=edgeLayoutCache.get(group.dataset.id).mid, box=group.querySelector('[data-bend]').getBBox();
+    const mid=edgeLayoutCache.get(group.dataset.id).mid, box=group.querySelector('[data-label]').getBBox();
     bounds.push({kind:'edge',id:group.dataset.id,box:{x:mid.x+box.x,y:mid.y+box.y,width:box.width,height:box.height}});
   }
   return bounds;
@@ -737,14 +742,15 @@ diagram.addEventListener('pointerdown',event=>{
     if (!isSelected('node',n.id)) select('node',n.id);
     const movingIds=new Set(selectionItems().filter(item=>item.kind==='node').map(item=>item.id));
     const nodes=project.nodes.filter(n=>movingIds.has(n.id)).map(n=>({target:n,x:n.x,y:n.y}));
-    const routes=project.edges.filter(e=>isSelected('edge',e.id)||movingIds.has(e.source)&&movingIds.has(e.target)).map(target=>{
+    const routes=project.edges.filter(e=>movingIds.has(e.source)&&movingIds.has(e.target)).map(target=>{
       const shape=edgeLayoutCache.get(target.id);
       return shape?{target,points:editablePoints(target,shape),label:target.route?.label||shape.mid}:null;
     }).filter(Boolean);
-    drag={kind:'node',target:n,start:point,nodes,routes,movingIds,pointer:event.pointerId};
-  } else if (hit&&tool.kind==='select'&&event.target.closest('[data-bend]')) {
+    const labels=project.edges.filter(e=>isSelected('edge',e.id)).map(target=>({target,origin:edgeLayoutCache.get(target.id)?.mid})).filter(item=>item.origin);
+    drag={kind:'node',target:n,start:point,nodes,routes,labels,movingIds,pointer:event.pointerId};
+  } else if (hit&&tool.kind==='select'&&event.target.closest('[data-label]')) {
     const e=project.edges.find(e=>e.id===hit.dataset.id);
-    drag={kind:'edge',target:e,start:point,bend:e.bend,geo:edgeLayout().get(e.id),pointer:event.pointerId};
+    drag={kind:'edge',target:e,start:point,geo:edgeLayoutCache.get(e.id),path:hit.querySelector('.wire'),pointer:event.pointerId};
   } else if (hit) {
     graphClick(hit.dataset.kind,hit.dataset.id);
     return;
@@ -798,6 +804,13 @@ diagram.addEventListener('pointermove',event=>{
       editRoute(route.target,route.points.map(p=>({x:p.x+offset.x,y:p.y+offset.y})));
       route.target.route.label={x:route.label.x+offset.x,y:route.label.y+offset.y};
     }
+    if (drag.labels.length) {
+      const lines=edgeLayout();
+      for (const {target,origin} of drag.labels) {
+        const shape=lines.get(target.id);
+        if (shape) target.labelPosition=closestPathPosition(svg('path',{d:shape.d}),{x:origin.x+offset.x,y:origin.y+offset.y});
+      }
+    }
   } else if (drag.kind==='waypoint') {
     const point={x:drag.origin.x+dx/view.scale,y:drag.origin.y+dy/view.scale};
     const snapped=event.altKey?{...point,guides:[],snapped:false}:
@@ -806,13 +819,9 @@ diagram.addEventListener('pointermove',event=>{
     drag.snapped=snapped.snapped;
     drag.points[drag.index]={x:snapped.x,y:snapped.y};
     editRoute(drag.target,drag.points);
-  } else if (drag.geo && drag.target.route) {
+  } else if (drag.kind==='edge' && drag.geo) {
     const {x,y}=drag.geo.mid;
-    drag.target.route.label={x:x+dx/view.scale,y:y+dy/view.scale};
-  } else if (drag.geo) {
-    const {a,b}=drag.geo,length=Math.hypot(b.x-a.x,b.y-a.y);
-    const offset=length?(dx*(a.y-b.y)+dy*(b.x-a.x))/length:-dy;
-    drag.target.bend=clamp(drag.bend+2*offset/view.scale,-1000,1000);
+    drag.target.labelPosition=closestPathPosition(drag.path,{x:x+dx/view.scale,y:y+dy/view.scale});
   }
   renderGraph();
 });
@@ -830,7 +839,7 @@ function finishPointer(event) {
       }
       for (const edge of project.edges) {
         const before=done.before.edges.find(e=>e.id===edge.id);
-        edge.bend=before.bend;edge.route=structuredClone(before.route);
+        edge.bend=before.bend;edge.route=structuredClone(before.route);edge.labelPosition=before.labelPosition;
       }
     }
     selected=done.selection;

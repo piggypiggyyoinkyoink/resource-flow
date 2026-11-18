@@ -27,6 +27,29 @@ const same = (a,b) => a.x===b.x && a.y===b.y;
 const distance = (a,b) => Math.hypot(b.x-a.x,b.y-a.y);
 const coordinates = p => p.x+' '+p.y;
 
+export function closestPathPosition(path,p) {
+  const length=path.getTotalLength();
+  if (!length) return 0;
+  const count=Math.min(1024,Math.max(1,Math.ceil(length/8)));
+  const squared=offset=>{
+    const q=path.getPointAtLength(offset);
+    return (q.x-p.x)**2+(q.y-p.y)**2;
+  };
+  let best=0, nearest=squared(0);
+  for (let i=1;i<=count;i++) {
+    const offset=length*i/count, distance=squared(offset);
+    if (distance<nearest) {best=offset;nearest=distance;}
+  }
+  // Refine against the actual SVG path so curves and rounded corners stay exact.
+  for (let step=length/count/2;step>.0001;step/=2) {
+    for (const offset of [Math.max(0,best-step),Math.min(length,best+step)]) {
+      const distance=squared(offset);
+      if (distance<nearest) {best=offset;nearest=distance;}
+    }
+  }
+  return best/length;
+}
+
 function orthogonal(points) {
   const route = [points[0]];
   let horizontal;

@@ -122,7 +122,7 @@ h3 {color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.1
 .edge.selected .wire,.edge.connecting .wire,.edge:hover .wire,.edge:focus-visible .wire,.edge.active .wire {stroke:var(--flow-tint,var(--mint));stroke-width:2.5}
 .edge.selected .tip,.edge.connecting .tip,.edge.active .tip {fill:var(--flow-tint,var(--mint))}
 .edge.selected .wire-label {stroke:var(--mint)}
-.edge [data-bend] {cursor:move}
+.edge [data-label] {cursor:move}
 #alignment-guides,#selection-area {pointer-events:none}
 .alignment-guide {stroke:#fbc87a;stroke-width:1;stroke-dasharray:5 4}
 .selection-area {fill:#71e5bc18;stroke:var(--mint);stroke-width:1;stroke-dasharray:5 3}
