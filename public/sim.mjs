@@ -28,6 +28,7 @@ export class Simulation {
     this.ended = '';
     this.issues = new Set(project.warnings);
     this.nodes = new Map(project.nodes.map(n=>[n.id,n]));
+    this.endConditions = project.nodes.filter(n=>n.type==='end');
     this.edges = new Map(project.edges.map(e=>[e.id,e]));
     this.flow = project.edges.filter(e=>e.type==='flow');
     this.states = project.edges.filter(e=>e.type==='state');
@@ -48,6 +49,7 @@ export class Simulation {
     this.previousRuntime = new Map();
     this.clicks = new Map();
     this.pending = new Set();
+    this.triggerAttempts = new Set();
     this.enabledBefore = new Map();
     this.lastModifiers = new Map();
     this.nameScope = new Map();
@@ -384,6 +386,7 @@ export class Simulation {
   commit(plan, chain=new Set()) {
     const moved = new Map();
     for (const tx of plan.moves) {
+      if (this.ended) break;
       const {e,from,to,type,count,minted,stock} = tx;
       if (!minted) {
         add(stock,type,-count);
@@ -401,6 +404,7 @@ export class Simulation {
       moved.set(e.id,(moved.get(e.id)||0)+count);
       this.events.push({id:e.id,amount:count,resource:type});
       this.receive(to,type,count,e,chain);
+      this.checkEndConditions();
     }
     return moved;
   }
@@ -425,7 +429,7 @@ export class Simulation {
 
   receive(node,type,count,edge,chain) {
     if (node.type==='gate') {
-      this.routeGate(node,type,count,chain);
+      if (!this.checkEndConditions()) this.routeGate(node,type,count,chain);
       return;
     }
     if (!this.stocks.has(node.id)) return;
@@ -499,6 +503,7 @@ export class Simulation {
       for (const e of conditional) if (this.expr(comparison(this.flowFormula(e)),0,e,this.scope(e,index))) add(routed,e,count);
     }
     for (const edge of edges) {
+      if (this.ended) break;
       const count=routed.get(edge);
       if (!count) continue;
       this.commit(this.plan([edge],false,{stock:new Map([[type,count]]),amount:count}),chain);
@@ -510,6 +515,7 @@ export class Simulation {
     const edge = (this.outgoing.get(node.id)||[])[0];
     if (!edge || !this.canUse(edge) || !this.due(edge)) return;
     for (const batch of list) {
+      if (this.ended) break;
       if (batch.due > this.step) {
         if (node.type==='queue') break;
         continue;
@@ -546,6 +552,7 @@ export class Simulation {
       }
       if (!costs.size) break;
       if (!matching) this.commit(paid);
+      if (this.ended) return true;
       const production = this.plan(output,false,{mint:true});
       if (!production.moves.length && production.expected) {
         // Keep delivered ingredients for a later attempt when an output unblocks.
@@ -554,9 +561,10 @@ export class Simulation {
       }
       for (const [type,count] of costs) add(this.stocks.get(node.id),type,-count);
       this.delivered.set(node.id,new Map());
+      if (this.checkEndConditions()) return true;
       this.commit(production);
       worked=true;
-      if (node.conversion==='single') break;
+      if (this.ended || node.conversion==='single') break;
       if (iteration===9999) this.issues.add(node.label + ': multiple conversion reached the per-step iteration limit.');
     }
     return worked;
@@ -584,10 +592,13 @@ export class Simulation {
     if (plan.expected && (!plan.moves.length || !plan.full && direction==='pull')) this.mark(node.id,'failed',true);
   }
 
-  triggers() {
+  triggers({endOnly=false}={}) {
     const split = by(this.states.filter(e=>e.mode==='split'),'source');
     for (const edge of this.states) {
+      if (this.ended) return;
+      if (this.triggerAttempts.has(edge.id)) continue;
       if (!['trigger','triggerIf'].includes(edge.mode) || !this.nodes.has(edge.target)) continue;
+      if (endOnly && this.nodes.get(edge.target).type!=='end') continue;
       const event = this.activity.get(edge.source);
       if (!event || !this.enabled(edge)) continue;
       const isSink = this.nodes.get(edge.source)?.type==='sink';
@@ -602,26 +613,88 @@ export class Simulation {
         const changed = edge.triggerOn==='gain' ? gain : edge.triggerOn==='loss' ? loss : gain || loss;
         if (!changed) continue;
         if (edge.triggerOn==='chance') {
+          this.triggerAttempts.add(edge.id);
           const chance = this.stateOverride(edge) ?? this.expr(edge.formula,0,edge);
           if (chance<=0 || chance>100 || chance<100 && this.rng()*100>=chance) continue;
         }
       }
+      this.triggerAttempts.add(edge.id);
       this.activeEdges.add(edge.id);
-      if (this.nodes.get(edge.target).type==='end') this.ended=this.nodes.get(edge.target).label;
+      if (this.nodes.get(edge.target).type==='end') this.ended=this.nodes.get(edge.target).label || 'End condition';
       else this.pending.add(edge.target);
     }
     for (const [id,edges] of split) {
+      if (this.ended) return;
+      if (this.triggerAttempts.has(id)) continue;
+      if (endOnly && !edges.some(e=>this.nodes.get(e.target)?.type==='end')) continue;
       const event = this.activity.get(id);
       const node = this.nodes.get(id);
       if (!node || !event || !(event.in||event.out||event.acted&&!event.failed&&node.type!=='sink')) continue;
       const options = edges.filter(e=>this.enabled(e) && this.nodes.has(e.target))
         .map(e=>[e,this.stateOverride(e) ?? this.expr(e.formula.replace(/%$/,''),1,e)]).filter(([,n])=>n>0);
+      if (!options.length) continue;
+      this.triggerAttempts.add(id);
       const choice = this.pick(options,{...node,id:'split_'+id});
       if (choice) {
         this.activeEdges.add(choice.id);
-        if (this.nodes.get(choice.target).type==='end') this.ended=this.nodes.get(choice.target).label;
+        if (this.nodes.get(choice.target).type==='end') this.ended=this.nodes.get(choice.target).label || 'End condition';
         else this.pending.add(choice.target);
       }
+    }
+  }
+
+  checkEndConditions(pending=this.pending) {
+    if (this.ended || !this.endConditions.length) return Boolean(this.ended);
+    this.refreshNames();
+    this.evaluateRegisters({updateAuto:false});
+    for (const node of this.endConditions) {
+      const conditional = node.condition || (this.control.get(node.id)||[]).some(e=>e.mode==='enable');
+      if (conditional && this.enabled(node) || node.formula && this.expr(comparison(node.formula),0,node) || pending.has(node.id)) {
+        this.ended=node.label || 'End condition';
+        return true;
+      }
+    }
+    this.triggers({endOnly:true});
+    return Boolean(this.ended);
+  }
+
+  runActions(pending) {
+    const actions=[];
+    for (const node of this.project.nodes) {
+      const allowed = this.nodeEnabled.get(node.id);
+      const previously = this.enabledBefore.get(node.id);
+      this.enabledBefore.set(node.id,allowed);
+      if (!allowed || !tickTypes.has(node.type) || node.type==='end') continue;
+      if (pending.has(node.id) || node.trigger==='auto' || node.trigger==='start'&&this.step===1 ||
+          node.trigger==='enable'&&!previously || node.trigger==='click'&&this.clicks.has(node.id)) actions.push(node);
+    }
+    const acted = new Set();
+    for (const node of actions.filter(n=>n.type==='sink')) {
+      this.act(node);
+      acted.add(node.id);
+      if (this.checkEndConditions(pending)) return;
+    }
+    for (const node of this.project.nodes) if (this.buffer.has(node.id) && this.nodeEnabled.get(node.id)) {
+      this.release(node);
+      if (this.checkEndConditions(pending)) return;
+    }
+    for (const node of actions.filter(n=>n.type!=='sink')) {
+      this.act(node);
+      acted.add(node.id);
+      if (this.checkEndConditions(pending)) return;
+    }
+    for (let i=0;i<this.project.nodes.length;i++) {
+      let changed = false;
+      for (const node of this.project.nodes) if (node.type==='converter' && this.nodeEnabled.get(node.id) &&
+          (!acted.has(node.id) || this.activity.get(node.id)?.failed) && this.delivered.get(node.id)?.size) {
+        if (this.convert(node,false)) {
+          acted.add(node.id);
+          this.mark(node.id,'failed',false);
+          changed = true;
+        }
+        if (this.checkEndConditions(pending)) return;
+      }
+      if (!changed) break;
     }
   }
 
@@ -647,6 +720,7 @@ export class Simulation {
     this.rates = new Map();
     this.activeEdges = new Set();
     this.events = [];
+    this.triggerAttempts.clear();
     this.refreshNames();
     this.evaluateRegisters();
     this.applyModifiers();
@@ -659,38 +733,12 @@ export class Simulation {
     this.delivered ||= new Map();
     const pending = this.pending;
     this.pending = new Set();
-    const acted = new Set();
-    for (const n of this.project.nodes) if (this.buffer.has(n.id) && this.nodeEnabled.get(n.id)) this.release(n);
-    for (const n of this.project.nodes) {
-      const allowed = this.nodeEnabled.get(n.id);
-      const previously = this.enabledBefore.get(n.id);
-      this.enabledBefore.set(n.id,allowed);
-      if (!allowed || !tickTypes.has(n.type) || n.type==='end') continue;
-      if (pending.has(n.id) || n.trigger==='auto' || n.trigger==='start'&&this.step===1 ||
-          n.trigger==='enable'&&!previously || n.trigger==='click'&&this.clicks.has(n.id)) {
-        this.act(n);
-        acted.add(n.id);
-      }
-    }
-    for (let i=0;i<this.project.nodes.length;i++) {
-      let changed = false;
-      for (const n of this.project.nodes) if (n.type==='converter' && this.nodeEnabled.get(n.id) &&
-          (!acted.has(n.id) || this.activity.get(n.id)?.failed) && this.delivered.get(n.id)?.size) {
-        if (this.convert(n,false)) {
-          acted.add(n.id);
-          this.mark(n.id,'failed',false);
-          changed = true;
-        }
-      }
-      if (!changed) break;
-    }
-    this.refreshNames();
-    this.evaluateRegisters({updateAuto:false});
-    this.triggers();
-    for (const n of this.project.nodes) {
-      if (n.type !== 'end') continue;
-      if ((n.condition || (this.control.get(n.id)||[]).some(e=>e.mode==='enable')) && this.enabled(n) ||
-           n.formula && this.expr(comparison(n.formula),0,n) || pending.has(n.id)) this.ended=n.label;
+    if (!this.checkEndConditions(pending)) this.runActions(pending);
+    if (!this.ended) {
+      this.refreshNames();
+      this.evaluateRegisters({updateAuto:false});
+      this.triggers();
+      this.checkEndConditions(pending);
     }
     this.clicks.clear();
     const result = this.snapshot();

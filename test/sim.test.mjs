@@ -359,6 +359,125 @@ test('resource filter, modifiers, triggers and end condition',()=>{
   assert.equal(run.ended,'stop');
   assert.equal(run.advance().step,2);
 });
+
+test('lethal damage stops before regeneration for either node order and history mode',()=>{
+  for (const sourceFirst of [true,false]) for (const retainHistory of [true,false]) {
+    const health=node('pool','health',{initial:'3',capacity:'10'});
+    const regen=node('source','regen');
+    const damage=node('sink','damage',{trigger:'auto'});
+    const nodes=sourceFirst?[regen,health,damage]:[damage,health,regen];
+    nodes.push(node('end','death'));
+    const run=new Simulation(model(nodes,[
+      flow('health','damage','3',{id:'damage-flow'}),flow('regen','health','2',{id:'regen-flow'}),
+      state('health','death','enable','<= 0'),
+    ]),'42',{retainHistory});
+    const final=run.advance();
+    assert.equal(run.ended,'death');
+    assert.equal(final.values.health,0);
+    assert.equal(final.step,1);
+    assert.deepEqual(run.events.map(e=>e.id),['damage-flow']);
+    assert.equal(run.activity.has('regen'),false);
+    assert.strictEqual(run.advance(),final);
+    assert.equal(run.history.length,retainHistory?2:1);
+  }
+});
+
+test('surviving damage leaves room for regeneration after all sinks run',()=>{
+  const run=new Simulation(model([
+    node('source','regen'),node('pool','health',{initial:'5',capacity:'5'}),
+    node('sink','first',{trigger:'auto'}),node('sink','second',{trigger:'auto'}),node('end','death'),
+  ],[
+    flow('regen','health','2',{id:'regen-flow'}),flow('health','first','1',{id:'first-flow'}),
+    flow('health','second','1',{id:'second-flow'}),state('health','death','enable','<= 0'),
+  ]));
+  assert.equal(run.advance().values.health,5);
+  assert.equal(run.ended,'');
+  assert.deepEqual(run.events.map(e=>e.id),['first-flow','second-flow','regen-flow']);
+});
+
+test('end formulas and register inputs observe the health reached by damage',()=>{
+  for (const linkedRegister of [true,false]) {
+    const run=new Simulation(model([
+      node('pool','health',{initial:'2'}),node('source','regen'),
+      node('sink','damage',{trigger:'auto'}),node('register','dead',{formula:'a <= 0'}),
+      node('end','death',{formula:linkedRegister?'':'health <= 0'}),
+    ],[
+      flow('health','damage','2'),flow('regen','health','2'),state('health','dead','input','a'),
+      ...(linkedRegister?[state('dead','death','enable','> 0')]:[]),
+    ]));
+    assert.equal(run.advance().values.health,0);
+    assert.equal(run.ended,'death');
+    assert.equal(run.value('dead'),1);
+  }
+});
+
+test('an end condition stops the remaining transfers in the current action',()=>{
+  const run=new Simulation(model([
+    node('source','first'),node('source','second'),node('pool','score'),
+    node('end','stop',{formula:'score == 1'}),
+  ],[
+    flow('first','score','1',{id:'first-flow'}),flow('first','score','1',{id:'extra-flow'}),
+    flow('second','score','1',{id:'second-flow'}),
+  ]));
+  assert.equal(run.advance().values.score,1);
+  assert.equal(run.ended,'stop');
+  assert.deepEqual(run.events.map(e=>e.id),['first-flow']);
+});
+
+test('lethal sinks stop a queued heal before its release',()=>{
+  for (const type of ['delay','queue']) {
+    const run=new Simulation(model([
+      node('source','heal',{trigger:'start'}),node(type,'wait'),
+      node('pool','health',{initial:'3'}),node('sink','damage',{trigger:'auto'}),node('end','death'),
+    ],[
+      flow('heal','wait','2'),flow('wait','health','1',{id:'release'}),
+      flow('health','damage','3',{condition:'step > 1'}),state('health','death','enable','<= 0'),
+    ]));
+    assert.equal(run.advance().values.health,3);
+    assert.equal(run.advance().values.health,0);
+    assert.equal(run.ended,'death');
+    assert.equal(run.value('wait'),2);
+    assert.equal(run.activeEdges.has('release'),false);
+  }
+});
+
+test('gates and converters stop before returning consumed health',()=>{
+  for (const type of ['gate','converter']) {
+    const run=new Simulation(model([
+      node('pool','health',{initial:'3',direction:'push',trigger:type==='gate'?'auto':'passive'}),
+      node(type,'transform',{trigger:'auto'}),node('end','death'),
+    ],[
+      flow('health','transform','3',{id:'consume'}),flow('transform','health','2',{id:'restore'}),
+      state('health','death','enable','<= 0'),
+    ]));
+    assert.equal(run.advance().values.health,0);
+    assert.equal(run.ended,'death');
+    assert.deepEqual(run.events.map(e=>e.id),['consume']);
+    if (type==='converter') assert.equal(run.value('transform'),3);
+  }
+});
+
+test('a sink trigger can end a step before sources and chance rolls happen once',()=>{
+  for (const chance of [0,33,100]) {
+    const run=new Simulation(model([
+      node('pool','health',{initial:'5'}),node('source','regen'),
+      node('sink','damage',{trigger:'auto'}),node('end','stop'),
+    ],[
+      flow('health','damage'),flow('regen','health','2'),
+      state('damage','stop','trigger',String(chance),{triggerOn:'chance'}),
+    ]));
+    let rolls=0;
+    run.rng=()=>{rolls++;return 0.5;};
+    assert.equal(run.advance().values.health,chance===100?4:6);
+    assert.equal(run.ended,chance===100?'stop':'');
+    assert.equal(rolls,chance===33?1:0);
+    if (chance===33) {
+      assert.equal(run.advance().values.health,7);
+      assert.equal(rolls,2);
+    }
+  }
+});
+
 test('same seed produces same stochastic history',()=>{
   const diagram=model([node('source','s'),node('pool','p')],[flow('s','p','2D6')]);
   const a=values(new Simulation(diagram,'A'),'p',20), b=values(new Simulation(diagram,'A'),'p',20);

@@ -12,7 +12,7 @@ Resource Flow is a local, offline editor and simulator for Machinations-style re
 The web server binds to localhost. Editing, saving, and running simulations work offline, online access is only required to install Node.js - there are no node module dependencies. Set the **PORT** environment variable before launch to choose a different port.
 
 
-## Import and save
+## Import and Save
 
 - **From Public Machinations URL** (recommended): fetches the published model, including register names, saved connector waypoints, and label positions. If Chrome, Edge, or Chromium is available, the app also reads the exact connector paths from the public preview in a temporary headless browser. If the preview is unavailable, the app draws the connections from the saved model.
 - **From Local diagram file**: accepts a Resource Flow project JSON, Machinations **mxGraphModel** XML, a public model JSON response containing that XML, or a captured diagram SVG/HTML.  
@@ -47,6 +47,6 @@ Use **Step** for one tick, **Play** for continuous execution, and **Reset simula
 
 **Run a forecast** repeats the model with different local seeds and reports the minimum, median, and maximum final value for each series. Forecasts skip manual clicks.
 
-## Simulation compatibility
+## Simulation Compatibility
 
 The local engine implements only basic behaviour. It is an independent implementation. Exact Machinations parity across arbitrary models should not be expected. Trader exchanges, agentic triggers, live external variables, full Math.js language support, and the original random sequence are outside its present coverage. Timing inside a step, complex trigger and gate ordering, advanced or legacy modifier variants, and detailed same-step interactions should be expected to produce different results. Consult **Diagram issues** when an import or formula reports a problem - the imported diagram likely relies on something not currently supported by ResourceFlow. Feel free to make a PR to add any of the missing functionality outlined here, or to fix any parity issues.
