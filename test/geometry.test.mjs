@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {blank, makeEdge, makeNode, normalize} from '../public/model.mjs';
-import {importedEdgeShape, routePoints, containsBox, simplifyPoints, straightenCorners, snapAlignment, snapWaypoint, closestPathPosition} from '../public/geometry.mjs';
+import {importedEdgeShape, routePoints, containsBox, simplifyPoints, straightenCorners, snapAlignment, snapWaypoint, closestPathPosition, edgeLabelPoint} from '../public/geometry.mjs';
 
 function polylinePath(points) {
   const lengths=points.slice(1).map((p,i)=>Math.hypot(p.x-points[i].x,p.y-points[i].y));
@@ -62,6 +62,35 @@ test('label positions survive saving and reopening without changing connector ge
     project.edges[0].labelPosition=input;
     assert.equal(normalize(project).edges[0].labelPosition,expected);
   }
+});
+
+test('untouched imported labels follow endpoint edits after converting legacy coordinates',()=>{
+  const project=blank();
+  project.nodes=[makeNode('source',{id:'a',x:0,y:0}),makeNode('pool',{id:'b',x:200,y:0})];
+  project.edges=[makeEdge('flow','a','b',{route:{routing:'straight',points:[],label:{x:50,y:0}}})];
+  const edge=project.edges[0], route=structuredClone(edge.route);
+  const initial=edgeLabelPoint(edge,polylinePath([{x:0,y:0},{x:200,y:0}]));
+  assert.ok(Math.abs(initial.x-50)<.001);
+  assert.ok(Math.abs(edge.labelPosition-.25)<.00001);
+  const saved=normalize(JSON.parse(JSON.stringify(project))).edges[0];
+  const moved=edgeLabelPoint(saved,polylinePath([{x:0,y:0},{x:400,y:0}]));
+  assert.ok(Math.abs(moved.x-100)<.001);
+  assert.equal(moved.y,0);
+  assert.deepEqual(saved.route,route);
+});
+
+test('untouched imported labels follow waypoint edits and retain their saved path position',()=>{
+  const edge=makeEdge('state','a','b',{route:{routing:'straight',points:[{x:100,y:0},{x:100,y:100}],label:{x:105,y:50}}});
+  const initial=edgeLabelPoint(edge,polylinePath([{x:0,y:0},{x:100,y:0},{x:100,y:100},{x:200,y:100}]));
+  assert.ok(Math.abs(initial.x-100)<.001);
+  assert.ok(Math.abs(initial.y-50)<.001);
+  const position=edge.labelPosition;
+  const moved=edgeLabelPoint(edge,polylinePath([{x:0,y:0},{x:160,y:0},{x:160,y:200},{x:240,y:200}]));
+  assert.ok(Math.abs(moved.x-160)<.001);
+  assert.ok(Math.abs(moved.y-60)<.001);
+  assert.equal(edge.labelPosition,position);
+  assert.deepEqual(edgeLabelPoint({...edge,labelPosition:0},polylinePath([{x:0,y:0},{x:400,y:0}])),{x:0,y:0});
+  assert.equal(edgeLabelPoint(makeEdge('flow','a','b'),polylinePath([{x:0,y:0},{x:200,y:0}])),null);
 });
 
 test('imported paths and register label positions survive saving and reopening',()=>{

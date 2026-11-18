@@ -50,6 +50,16 @@ export function closestPathPosition(path,p) {
   return best/length;
 }
 
+export function edgeLabelPoint(edge,path) {
+  if (edge.labelPosition==null) {
+    if (!edge.route?.label) return null;
+    // Convert legacy imported coordinates before the connector can be edited.
+    edge.labelPosition=closestPathPosition(path,edge.route.label);
+  }
+  const p=path.getPointAtLength(path.getTotalLength()*edge.labelPosition);
+  return {x:p.x,y:p.y};
+}
+
 function orthogonal(points) {
   const route = [points[0]];
   let horizontal;

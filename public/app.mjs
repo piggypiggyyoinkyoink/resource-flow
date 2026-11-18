@@ -1,7 +1,7 @@
 import {blank, example, normalize, makeNode, makeEdge, makeResource, kinds, stateKinds, triggerModes, palette, fallback} from './model.mjs';
 import {Simulation} from './sim.mjs';
 import {comparison} from './formula.mjs';
-import {importedEdgeShape, routePoints, containsBox, simplifyPoints, straightenCorners, snapAlignment, snapWaypoint, closestPathPosition} from './geometry.mjs';
+import {importedEdgeShape, routePoints, containsBox, simplifyPoints, straightenCorners, snapAlignment, snapWaypoint, closestPathPosition, edgeLabelPoint} from './geometry.mjs';
 import {readDiagram} from './import.mjs';
 import {icon, innerIcon} from './icons.mjs';
 
@@ -125,7 +125,7 @@ function restore(source,destination) {
   project=source.pop();
   waypointCache.clear();
   selected=null;from=null;tool={kind:'select'};
-  resetSim();saveLocal();renderAll();fit();
+  resetSim();saveLocal();renderAll();
 }
 function load(newProject,message) {
   waypointCache.clear();
@@ -181,10 +181,9 @@ function edgeLayout() {
   const points=new Map(project.nodes.map(n=>[n.id,{x:n.x,y:n.y,r:n.type==='text'?8:28}]));
   const edges=new Map(project.edges.map(e=>[e.id,e])), lines=new Map();
   function remember(edge,shape) {
-    if (edge.labelPosition!=null) {
+    if (edge.labelPosition!=null || edge.route?.label) {
       const path=svg('path',{d:shape.d});
-      const p=path.getPointAtLength(path.getTotalLength()*edge.labelPosition);
-      shape.mid={x:p.x,y:p.y};
+      shape.mid=edgeLabelPoint(edge,path);
     }
     lines.set(edge.id,shape);
     return shape;
