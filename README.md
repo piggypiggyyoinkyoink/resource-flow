@@ -30,10 +30,10 @@ There is currently no way to import ResourceFlow diagrams into Machinations. If 
 Use the **+** beside **Resources** to add a named, colored resource. Select it to rename it. Assign it in a node's resources panel. Pools can have multiple initial resource quantities. Resource connections can filter which type is transferred.
 
 ### Nodes
-Choose a node tool and click the canvas to add it to the diagram. Supported Machinations nodes: Source, Pool, Sink (drain), Gate, Converter, Register, Delay, Queue, End Condition. Assign resources to each node in its resources panel. Pools can have multiple resource types.
+Choose a node tool and click the canvas to add it to the diagram. Supported Machinations nodes: Source, Pool, Sink (drain), Gate, Converter, Register, Delay, Queue, End Condition. Assign resources to each node in its resources panel. Pools can have multiple resource types. Drag empty canvas to select fully enclosed nodes and connection labels. Drag a selected node to move the selection. Alignment guides help place nodes exactly horizontally or vertically beside each other.
 
 ### Connectors
-To add connectors, choose **Resource flow** or **State link**, then click the origin and destination nodes. A state link can attach to another connection. Drag a node to move it or a connection label to reposition its line. Note it is not currently possible to directly reposition edges from imported diagrams, though if a connected component moves, the editor redraws the route from its saved waypoints. Select a component to change its properties, reconnect it, or delete it.  
+To add connectors, choose **Resource flow** or **State link**, then click the origin and destination nodes. A state link can attach to another connection. Select a connector to display its waypoints.  Nearby right angles snap into place. Hold **Alt** while dragging to position freely. Select a component to change its properties, reconnect it, or delete it.
 A resource connection's amount can be a number, an expression, a dice roll such as `2D6`, a chance such as `25%`, or `all` when it leaves a pool. Use the **Parameters** section for reusable named values and expressions. State links of type **Register input** let you supply variables explicitly. 
 
 ### Expressions

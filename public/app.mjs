@@ -1,7 +1,7 @@
 import {blank, example, normalize, makeNode, makeEdge, makeResource, kinds, stateKinds, triggerModes, palette, fallback} from './model.mjs';
 import {Simulation} from './sim.mjs';
 import {comparison} from './formula.mjs';
-import {importedEdgeShape} from './geometry.mjs';
+import {importedEdgeShape, routePoints, containsBox, simplifyPoints, straightenCorners, snapAlignment, snapWaypoint} from './geometry.mjs';
 import {readDiagram} from './import.mjs';
 import {icon, innerIcon} from './icons.mjs';
 
@@ -46,6 +46,15 @@ let selected=demo?{kind:'node',id:'stock'}:null;
 let tool={kind:'select'},from=null,drag=null,space=false,timer=null,toastTimer=null,importTask=null;
 let view={x:0,y:0,scale:1},sim,preview=null,chartVisible=new Map(),forecastTask=null;
 const undo=[],redo=[];
+const waypointCache=new Map();
+let alignmentGuides=[];
+
+const selectionItems=()=>selected?.kind==='multiple'?selected.items:
+  selected&&['node','edge'].includes(selected.kind)?[selected]:[];
+const isSelected=(kind,id)=>selectionItems().some(item=>item.kind===kind&&item.id===id);
+function setSelection(items) {
+  selected=items.length>1?{kind:'multiple',items}:items[0]||null;
+}
 
 function renderView() {
   graph.setAttribute('transform','translate('+view.x+' '+view.y+') scale('+view.scale+')');
@@ -72,6 +81,7 @@ function fit() {
     view={x:width/2-(x1+x2)/2*scale,y:(height-12)/2-(y1+y2)/2*scale,scale};
   }
   renderView();
+  renderEditorOverlay();
 }
 function localPoint(event) {
   const box=diagram.getBoundingClientRect();
@@ -82,6 +92,7 @@ function zoom(factor,point={x:diagram.clientWidth/2,y:diagram.clientHeight/2}) {
   const locked=world(point),scale=clamp(view.scale*factor,.04,4);
   view={x:point.x-locked.x*scale,y:point.y-locked.y*scale,scale};
   renderView();
+  renderEditorOverlay();
 }
 function toast(message) {
   clearTimeout(toastTimer);
@@ -112,10 +123,12 @@ function restore(source,destination) {
   if (!source.length) return;
   destination.push(structuredClone(project));
   project=source.pop();
+  waypointCache.clear();
   selected=null;from=null;tool={kind:'select'};
   resetSim();saveLocal();renderAll();fit();
 }
 function load(newProject,message) {
+  waypointCache.clear();
   change(()=>{project=newProject;selected=null;from=null;tool={kind:'select'};chartVisible=new Map();});
   fit();
   if (message) toast(message);
@@ -123,6 +136,7 @@ function load(newProject,message) {
 function setTool(kind,value) {
   tool=(tool.kind===kind&&tool.value===value)?{kind:'select'}:{kind,value};
   from=null;
+  alignmentGuides=[];
   renderTools();renderGraph();
 }
 function renderTools() {
@@ -235,7 +249,7 @@ function renderGraph() {
     const gated=sim.disabledRegisterOutputs.has(e.id);
     const {d,mid,end,angle}=shape,label=shorten(edgeSummary(e,liveValue),25);
     const width=Math.max(24,label.length*6.35+15);
-    const css='edge '+e.type+(selected?.kind==='edge'&&selected.id===e.id?' selected':'')+(from===e.id?' connecting':'')+
+    const css='edge '+e.type+(isSelected('edge',e.id)?' selected':'')+(from===e.id?' connecting':'')+
       (sim.activeEdges.has(e.id)?' active':'')+(liveValue!==undefined?' overwritten':'')+(gated?' gated':'');
     const name=(e.type==='state'?'State connection ':'Resource connection ')+(e.label||edgeSummary(e))+
       (liveValue!==undefined?' · Live overwrite '+valueText(liveValue):'')+(gated?' · Origin register disabled':'');
@@ -258,7 +272,7 @@ function renderGraph() {
     const register=n.type==='register';
     const value=values[n.id];
     const resourceTint=resourceTints.get(n.id);
-    const cls='node '+n.type+(selected?.kind==='node'&&selected.id===n.id?' selected':'')+
+    const cls='node '+n.type+(isSelected('node',n.id)?' selected':'')+
       (from===n.id?' connecting':'')+(n.trigger==='click'?' queued':'')+(resourceTint?' resource-node':'');
     const group=svg('g',{class:cls,transform:'translate('+n.x+' '+n.y+')','data-id':n.id,'data-kind':'node',
       tabindex:0,role:'button','aria-label':kinds[n.type]+' '+n.label+(register?' · '+valueText(value):'')});
@@ -301,7 +315,59 @@ function renderGraph() {
     return group;
   });
   $('nodes').replaceChildren(...nodes);
+  renderEditorOverlay();
   if (focusKey) [...nodes,...edges].find(n=>n.dataset.id===focusKey)?.focus({preventScroll:true});
+}
+
+function editablePoints(edge,shape) {
+  if (edge.route && shape.d!==edge.route.rendered?.d) return routePoints(edge.route,shape.a,shape.b);
+  const cached=waypointCache.get(edge.id);
+  if (cached?.d===shape.d) return cached.points;
+  const path=$('edges').querySelector('[data-id="'+CSS.escape(edge.id)+'"] .wire');
+  const length=path.getTotalLength(), count=Math.min(1024,Math.max(1,Math.ceil(length/5)));
+  const sampled=Array.from({length:count+1},(_,i)=>{
+    const p=path.getPointAtLength(length*i/count);
+    return {x:p.x,y:p.y};
+  });
+  const points=straightenCorners([{...shape.a},...simplifyPoints(sampled,1).slice(1,-1),{...shape.b}]);
+  waypointCache.set(edge.id,{d:shape.d,points});
+  return points;
+}
+
+function editRoute(edge,points) {
+  edge.route={routing:'straight',points:points.slice(1,-1).map(p=>({x:p.x,y:p.y})),label:edge.route?.label||null};
+  edge.bend=0;
+}
+
+function renderEditorOverlay() {
+  $('alignment-guides').replaceChildren(...alignmentGuides.map(guide=>svg('line',{
+    ...guide,class:'alignment-guide','vector-effect':'non-scaling-stroke',
+  })));
+  const handles=[];
+  if (drag?.kind!=='marquee') for (const item of selectionItems().filter(item=>item.kind==='edge')) {
+    const edge=project.edges.find(e=>e.id===item.id), shape=edgeLayoutCache.get(item.id);
+    if (!edge||!shape) continue;
+    const points=editablePoints(edge,shape);
+    const path=$('edges').querySelector('[data-id="'+CSS.escape(edge.id)+'"] .wire');
+    const start=path.getPointAtLength(0), end=path.getPointAtLength(path.getTotalLength());
+    for (const p of [start,end]) handles.push(svg('circle',{
+      cx:p.x,cy:p.y,r:3.5/view.scale,class:'waypoint-end','vector-effect':'non-scaling-stroke',
+    }));
+    for (let i=1;i<points.length-1;i++) handles.push(svg('circle',{
+      cx:points[i].x,cy:points[i].y,r:5/view.scale,class:'waypoint'+(drag?.kind==='waypoint'&&drag.target.id===edge.id&&drag.index===i&&drag.snapped?' snapped':''),
+      'data-waypoint':i,'data-edge':edge.id,'vector-effect':'non-scaling-stroke',tabindex:0,role:'button',
+      'aria-label':'Waypoint '+i+' of '+(edge.label||edge.id),
+    },[svg('title',{text:'Drag to move. Double-click to remove.'})]));
+    for (let i=0;i<points.length-1;i++) {
+      const a=i?points[i]:start, b=i===points.length-2?end:points[i+1];
+      if (Math.hypot(a.x-b.x,a.y-b.y)*view.scale<36) continue;
+      handles.push(svg('circle',{
+        cx:(a.x+b.x)/2,cy:(a.y+b.y)/2,r:3.5/view.scale,class:'waypoint-insert',
+        'data-insert-waypoint':i+1,'data-edge':edge.id,'vector-effect':'non-scaling-stroke',
+      },[svg('title',{text:'Drag to add a waypoint.'})]));
+    }
+  }
+  $('waypoint-handles').replaceChildren(...handles);
 }
 
 function labelled(name,control) {
@@ -370,8 +436,8 @@ function deleteSelection() {
       for (const e of project.edges) if (e.resource===id) e.resource='';
     }
     if (kind==='parameter') project.variables.splice(id,1);
-    if (kind==='node'||kind==='edge') {
-      const removed=new Set([id]);
+    if (kind==='node'||kind==='edge'||kind==='multiple') {
+      const removed=new Set(selectionItems().map(item=>item.id));
       let changed=true;
       while (changed) {
         changed=false;
@@ -488,7 +554,12 @@ function edgeInspector(e) {
 }
 function renderInspector() {
   let list=[];
-  if (selected?.kind==='node') {
+  if (selected?.kind==='multiple') {
+    const nodes=selected.items.filter(item=>item.kind==='node').length;
+    const edges=selected.items.length-nodes;
+    list=[header(selected.items.length+' objects selected','Selection','cursor',deleteSelection),
+      pane('Selection',note(nodes+' nodes and '+edges+' connections'))];
+  } else if (selected?.kind==='node') {
     const node=project.nodes.find(n=>n.id===selected.id);
     if (node) list=nodeInspector(node);
   } else if (selected?.kind==='edge') {
@@ -614,44 +685,127 @@ function graphClick(kind,id) {
     if (kind==='node'&&(timer||sim.step>0)&&!sim.ended&&project.nodes.find(n=>n.id===id)?.trigger==='click') queueNode(id,1);
   }
 }
+
+function selectionBounds() {
+  const bounds=[];
+  for (const group of $('nodes').children) {
+    const node=project.nodes.find(n=>n.id===group.dataset.id), box=group.getBBox();
+    bounds.push({kind:'node',id:node.id,box:{x:node.x+box.x,y:node.y+box.y,width:box.width,height:box.height}});
+  }
+  for (const group of $('edges').children) {
+    const mid=edgeLayoutCache.get(group.dataset.id).mid, box=group.querySelector('[data-bend]').getBBox();
+    bounds.push({kind:'edge',id:group.dataset.id,box:{x:mid.x+box.x,y:mid.y+box.y,width:box.width,height:box.height}});
+  }
+  return bounds;
+}
+
+function renderSelection() {
+  for (const group of [...$('nodes').children,...$('edges').children]) {
+    group.classList.toggle('selected',isSelected(group.dataset.kind,group.dataset.id));
+  }
+  renderEditorOverlay();
+}
+
+function nodeSnap(points,excluded,event) {
+  if (event.altKey) return {dx:0,dy:0,guides:[]};
+  return snapAlignment(points,project.nodes.filter(n=>!excluded.has(n.id)),7/view.scale);
+}
+
 diagram.addEventListener('pointerdown',event=>{
   if (![0,1].includes(event.button)) return;
+  if (drag) return;
   const hit=event.target.closest('[data-kind]'),point=localPoint(event);
+  const handle=event.target.closest('[data-waypoint],[data-insert-waypoint]');
+  const selection=selected;
   if (space||tool.kind==='pan'||event.button===1) {
     drag={kind:'pan',start:point,x:view.x,y:view.y,pointer:event.pointerId};
   } else if (tool.kind==='node') {
-    const p=world(point),n=makeNode(tool.value,{x:p.x,y:p.y});
+    const p=world(point),snap=nodeSnap([p],new Set(),event);
+    const n=makeNode(tool.value,{x:p.x+snap.dx,y:p.y+snap.dy});
+    alignmentGuides=[];
     change(()=>{project.nodes.push(n);selected={kind:'node',id:n.id};tool={kind:'select'};});
     return;
+  } else if (handle&&tool.kind==='select') {
+    const target=project.edges.find(e=>e.id===handle.dataset.edge);
+    const points=editablePoints(target,edgeLayoutCache.get(target.id)).map(p=>({...p}));
+    const insert=handle.hasAttribute('data-insert-waypoint');
+    const index=Number(insert?handle.dataset.insertWaypoint:handle.dataset.waypoint);
+    const origin=insert?world(point):points[index];
+    drag={kind:'waypoint',target,start:point,points,index,insert,origin,pointer:event.pointerId};
   } else if (hit&&tool.kind==='select'&&hit.dataset.kind==='node') {
     const n=project.nodes.find(n=>n.id===hit.dataset.id);
-    drag={kind:'node',target:n,start:point,x:n.x,y:n.y,pointer:event.pointerId};
+    if (!isSelected('node',n.id)) select('node',n.id);
+    const movingIds=new Set(selectionItems().filter(item=>item.kind==='node').map(item=>item.id));
+    const nodes=project.nodes.filter(n=>movingIds.has(n.id)).map(n=>({target:n,x:n.x,y:n.y}));
+    const routes=project.edges.filter(e=>isSelected('edge',e.id)||movingIds.has(e.source)&&movingIds.has(e.target)).map(target=>{
+      const shape=edgeLayoutCache.get(target.id);
+      return shape?{target,points:editablePoints(target,shape),label:target.route?.label||shape.mid}:null;
+    }).filter(Boolean);
+    drag={kind:'node',target:n,start:point,nodes,routes,movingIds,pointer:event.pointerId};
   } else if (hit&&tool.kind==='select'&&event.target.closest('[data-bend]')) {
     const e=project.edges.find(e=>e.id===hit.dataset.id);
     drag={kind:'edge',target:e,start:point,bend:e.bend,geo:edgeLayout().get(e.id),pointer:event.pointerId};
   } else if (hit) {
     graphClick(hit.dataset.kind,hit.dataset.id);
     return;
+  } else if (tool.kind==='select') {
+    drag={kind:'marquee',start:point,origin:world(point),bounds:selectionBounds(),pointer:event.pointerId};
+    selected=null;
+    renderSelection();renderSidebar();renderInspector();
   } else {
     selected=null;from=null;renderAll();return;
   }
+  drag.selection=selection;
   event.preventDefault();
-  diagram.setPointerCapture(event.pointerId);
+  (drag.kind==='waypoint'?handle:diagram).setPointerCapture(event.pointerId);
 });
 diagram.addEventListener('pointermove',event=>{
-  if (!drag||drag.pointer!==event.pointerId) return;
+  if (!drag) {
+    if (tool.kind==='node') {
+      alignmentGuides=nodeSnap([world(localPoint(event))],new Set(),event).guides;
+      renderEditorOverlay();
+    }
+    return;
+  }
+  if (drag.pointer!==event.pointerId) return;
   const p=localPoint(event),dx=p.x-drag.start.x,dy=p.y-drag.start.y;
   if (!drag.moved&&Math.hypot(dx,dy)<4) return;
-  if (!drag.moved&&drag.kind!=='pan') {
+  if (!drag.moved&&!['pan','marquee'].includes(drag.kind)) {
+    if (drag.kind==='waypoint') diagram.setPointerCapture(event.pointerId);
     drag.before=structuredClone(project);
-    selected={kind:drag.kind,id:drag.target.id};
+    if (drag.kind!=='node') selected={kind:'edge',id:drag.target.id};
+    if (drag.kind==='waypoint'&&drag.insert) drag.points.splice(drag.index,0,drag.origin);
   }
   drag.moved=true;
   if (drag.kind==='pan') {
     view.x=drag.x+dx;view.y=drag.y+dy;renderView();return;
   }
+  if (drag.kind==='marquee') {
+    const cursor=world(p),origin=drag.origin;
+    const area={x:Math.min(origin.x,cursor.x),y:Math.min(origin.y,cursor.y),width:Math.abs(cursor.x-origin.x),height:Math.abs(cursor.y-origin.y)};
+    setSelection(drag.bounds.filter(item=>containsBox(area,item.box)).map(({kind,id})=>({kind,id})));
+    $('selection-area').replaceChildren(svg('rect',{...area,class:'selection-area','vector-effect':'non-scaling-stroke'}));
+    renderSelection();renderInspector();return;
+  }
+  alignmentGuides=[];
   if (drag.kind==='node') {
-    drag.target.x=drag.x+dx/view.scale;drag.target.y=drag.y+dy/view.scale;
+    const proposed=drag.nodes.map(n=>({x:n.x+dx/view.scale,y:n.y+dy/view.scale}));
+    const snap=nodeSnap(proposed,drag.movingIds,event);
+    const offset={x:dx/view.scale+snap.dx,y:dy/view.scale+snap.dy};
+    alignmentGuides=snap.guides;
+    for (const n of drag.nodes) {n.target.x=n.x+offset.x;n.target.y=n.y+offset.y;}
+    for (const route of drag.routes) {
+      editRoute(route.target,route.points.map(p=>({x:p.x+offset.x,y:p.y+offset.y})));
+      route.target.route.label={x:route.label.x+offset.x,y:route.label.y+offset.y};
+    }
+  } else if (drag.kind==='waypoint') {
+    const point={x:drag.origin.x+dx/view.scale,y:drag.origin.y+dy/view.scale};
+    const snapped=event.altKey?{...point,guides:[],snapped:false}:
+      snapWaypoint(point,drag.points[drag.index-1],drag.points[drag.index+1],8/view.scale);
+    alignmentGuides=snapped.guides;
+    drag.snapped=snapped.snapped;
+    drag.points[drag.index]={x:snapped.x,y:snapped.y};
+    editRoute(drag.target,drag.points);
   } else if (drag.geo && drag.target.route) {
     const {x,y}=drag.geo.mid;
     drag.target.route.label={x:x+dx/view.scale,y:y+dy/view.scale};
@@ -665,17 +819,57 @@ diagram.addEventListener('pointermove',event=>{
 function finishPointer(event) {
   if (!drag||drag.pointer!==event.pointerId) return;
   const done=drag;drag=null;
-  if (done.kind==='pan') return;
+  alignmentGuides=[];
+  $('selection-area').replaceChildren();
+  if (diagram.hasPointerCapture(done.pointer)) diagram.releasePointerCapture(done.pointer);
+  if (event.type==='pointercancel') {
+    if (done.before) {
+      for (const node of project.nodes) {
+        const before=done.before.nodes.find(n=>n.id===node.id);
+        node.x=before.x;node.y=before.y;
+      }
+      for (const edge of project.edges) {
+        const before=done.before.edges.find(e=>e.id===edge.id);
+        edge.bend=before.bend;edge.route=structuredClone(before.route);
+      }
+    }
+    selected=done.selection;
+    renderAll();return;
+  }
+  if (done.kind==='pan') {renderEditorOverlay();return;}
+  if (done.kind==='marquee') {renderAll();return;}
   if (done.moved) {record(done.before);saveLocal();renderAll();}
-  else if(event.type==='pointerup') graphClick(done.kind,done.target.id);
+  else if(done.kind!=='waypoint') graphClick(done.kind,done.target.id);
 }
 diagram.addEventListener('pointerup',finishPointer);
 diagram.addEventListener('pointercancel',finishPointer);
+diagram.addEventListener('pointerleave',()=>{
+  if (!drag) {alignmentGuides=[];renderEditorOverlay();}
+});
+function removeWaypoint(handle) {
+  const edge=project.edges.find(e=>e.id===handle.dataset.edge),shape=edgeLayoutCache.get(edge?.id);
+  if (!edge||!shape) return;
+  const points=editablePoints(edge,shape),index=Number(handle.dataset.waypoint);
+  if (index<1||index>=points.length-1) return;
+  change(()=>{
+    editRoute(edge,points.filter((_,i)=>i!==index));
+    selected={kind:'edge',id:edge.id};
+  },{preserveSim:true});
+}
+diagram.addEventListener('dblclick',event=>{
+  const handle=event.target.closest('[data-waypoint]');
+  if (handle) {event.preventDefault();removeWaypoint(handle);}
+});
 diagram.addEventListener('wheel',event=>{
   event.preventDefault();
+  if (drag) return;
   zoom(Math.exp(clamp(-event.deltaY*.0018,-.65,.65)),localPoint(event));
 },{passive:false});
 diagram.addEventListener('keydown',event=>{
+  const handle=event.target.closest('[data-waypoint]');
+  if (handle&&['Delete','Backspace'].includes(event.key)) {
+    event.preventDefault();event.stopPropagation();removeWaypoint(handle);return;
+  }
   const hit=event.target.closest('[data-kind]');
   if (hit&&(event.key==='Enter'||event.key===' ')) {
     event.preventDefault();event.stopPropagation();graphClick(hit.dataset.kind,hit.dataset.id);
@@ -848,6 +1042,9 @@ $('url-form').addEventListener('submit',async event=>{
 document.addEventListener('keydown',event=>{
   if (event.target.closest('input,textarea,select,button')||document.querySelector('dialog[open]')) return;
   const key=event.key.toLowerCase();
+  if (drag&&(['escape','delete','backspace'].includes(key)||(event.ctrlKey||event.metaKey)&&['z','y'].includes(key))) {
+    finishPointer({type:'pointercancel',pointerId:drag.pointer});
+  }
   if (event.ctrlKey||event.metaKey) {
     if (key==='z'||key==='y') {
       event.preventDefault();
@@ -865,7 +1062,10 @@ document.addEventListener('keydown',event=>{
   if (event.code==='Space') {event.preventDefault();space=true;renderTools();}
 });
 window.addEventListener('keyup',event=>{if(event.code==='Space'&&space){space=false;renderTools();}});
-window.addEventListener('blur',()=>{if(space){space=false;renderTools();}});
+window.addEventListener('blur',()=>{
+  if (drag) finishPointer({type:'pointercancel',pointerId:drag.pointer});
+  if (space) {space=false;renderTools();}
+});
 
 resetSim();
 if (demo) {

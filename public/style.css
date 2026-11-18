@@ -91,6 +91,7 @@ h3 {color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.1
 .canvas[data-mode="pan"] #diagram:active {cursor:grabbing}
 .canvas[data-mode="node"] #diagram,.canvas[data-mode="edge"] #diagram {cursor:crosshair}
 .node {cursor:grab;outline:none}
+.node:focus-visible,.edge:focus-visible {outline:none}
 .node:active {cursor:grabbing}
 .node.queued {cursor:pointer}
 .node .shape {fill:#151f2e;stroke:var(--node-tint,#a5b5ca);stroke-width:1.75}
@@ -102,7 +103,7 @@ h3 {color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.1
 .node .count {fill:#eaf4ff;text-anchor:middle;font-size:13px;font-weight:720;font-variant-numeric:tabular-nums}
 .node .register-value {fill:#efeaff}
 .node .halo {fill:none;stroke:transparent;stroke-width:1.6;rx:10}
-.node.selected .halo,.node.connecting .halo {stroke:var(--mint);filter:drop-shadow(0 0 5px #71e5bc60)}
+.node.selected .halo,.node.connecting .halo,.node:focus-visible .halo {stroke:var(--mint);filter:drop-shadow(0 0 5px #71e5bc60)}
 .node.selected .caption {fill:var(--mint)}
 .node .trigger {fill:var(--node-tint,#a5b5ca);opacity:.95}
 .edge {cursor:pointer;outline:none}
@@ -122,6 +123,14 @@ h3 {color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.1
 .edge.selected .tip,.edge.connecting .tip,.edge.active .tip {fill:var(--flow-tint,var(--mint))}
 .edge.selected .wire-label {stroke:var(--mint)}
 .edge [data-bend] {cursor:move}
+#alignment-guides,#selection-area {pointer-events:none}
+.alignment-guide {stroke:#fbc87a;stroke-width:1;stroke-dasharray:5 4}
+.selection-area {fill:#71e5bc18;stroke:var(--mint);stroke-width:1;stroke-dasharray:5 3}
+.waypoint,.waypoint-insert {fill:#152132;stroke:var(--mint);stroke-width:1.5;cursor:move;outline:none}
+.waypoint:hover,.waypoint:focus-visible,.waypoint.snapped {fill:var(--mint);stroke:#e5fff5}
+.waypoint-insert {fill:#71e5bc55;stroke-width:1}
+.waypoint-insert:hover {fill:var(--mint)}
+.waypoint-end {fill:#152132;stroke:var(--mint);stroke-width:1;pointer-events:none}
 .zoom {position:absolute;display:flex;align-items:center;gap:3px;bottom:13px;right:13px;padding:3px 5px;
   border-radius:8px;border:1px solid #344157;background:#162030;box-shadow:0 2px 12px #0005}
 .zoom .icon-button {width:30px;min-height:29px}

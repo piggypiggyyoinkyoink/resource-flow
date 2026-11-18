@@ -59,7 +59,7 @@
               <pattern id="dots" width="22" height="22" patternUnits="userSpaceOnUse"><circle cx="1" cy="1" r="1" fill="#344053"></circle></pattern>
             </defs>
             <rect id="backdrop" width="100%" height="100%" fill="url(#dots)"></rect>
-            <g id="graph"><g id="edges"></g><g id="nodes"></g></g>
+            <g id="graph"><g id="edges"></g><g id="nodes"></g><g id="alignment-guides"></g><g id="waypoint-handles"></g><g id="selection-area"></g></g>
           </svg>
           <div id="canvas-empty" class="canvas-empty" hidden><span data-icon="canvas"></span><strong>This diagram is empty</strong><p>Choose a node from the sidebar, then click the canvas to place it.</p></div>
           <div id="tool-hint" class="tool-hint" hidden></div>
@@ -129,7 +129,8 @@
     <div class="dialog-header"><h2>Help and shortcuts</h2><button class="icon-button" data-close title="Close" aria-label="Close" data-icon="close"></button></div>
     <div class="dialog-body help-copy">
       <p>Choose a node and click the canvas to add it. Choose a connection type, then click its origin and destination. State connections can attach to another connection.</p>
-      <p>Drag nodes to move them. Drag a connection label to bend its line, or change the endpoints in Properties.</p>
+      <p>Drag empty canvas to select fully enclosed nodes and connection labels. Drag a selected node to move the selection. Alignment guides snap nodes into horizontal or vertical alignment.</p>
+      <p>Select a connection to edit its waypoints. Drag a waypoint to move it, or a small segment handle to add one. Double-click a waypoint to remove it. Nearby right angles snap into place. Hold Alt while dragging to position freely.</p>
       <p>In an interactive simulation, click an <b>On click</b> node to queue its action for the next step. Register values can also be adjusted in Properties.</p>
       <dl><dt>Select / Pan</dt><dd>V / H</dd><dt>Temporary pan</dt><dd>Hold Space and drag</dd><dt>Fit diagram</dt><dd>F</dd><dt>Delete selection</dt><dd>Delete</dd><dt>Undo / Redo</dt><dd>Ctrl+Z / Ctrl+Shift+Z</dd></dl>
       <button class="button" id="load-example">Load example</button>
