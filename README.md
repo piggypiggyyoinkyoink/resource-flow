@@ -54,4 +54,8 @@ Use **Step** for one tick, **Play** for continuous execution, and **Reset simula
 
 ## Simulation Compatibility
 
-The local engine implements only basic behaviour. It is an independent implementation. Exact Machinations parity across arbitrary models should not be expected. Trader exchanges, agentic triggers, live external variables, full Math.js language support, and the original random sequence are outside its present coverage. Timing inside a step, complex trigger and gate ordering, advanced or legacy modifier variants, and detailed same-step interactions will likely produce different results. Consult **Diagram issues** when an import or formula reports a problem - the imported diagram likely relies on something not currently supported by ResourceFlow. Feel free to make a PR to add any of the missing functionality outlined here, or to fix any parity issues.
+The local engine implements only basic behaviour. It is an independent implementation. Exact Machinations parity across arbitrary models should not be expected. Trader exchanges, agentic triggers, live external variables, full Math.js language support, and the original random sequence are outside its present coverage. Timing inside a step, complex trigger and gate ordering, advanced or legacy modifier variants, and detailed same-step interactions will likely produce different results. Consult **Diagram issues** when an import or formula reports a problem - the imported diagram likely relies on something not currently supported by ResourceFlow. 
+
+## Contributing
+
+Contributions are welcome, feel free to make a PR to add any of the missing functionality outlined above, or to fix any parity issues. If you are using AI, make sure to give it `CONTEXT.md` so it understands how everything is supposed to work.
