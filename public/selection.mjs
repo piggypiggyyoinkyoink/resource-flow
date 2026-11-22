@@ -12,3 +12,8 @@ export function commonProperty(items,key) {
 export function setProperty(items,key,value) {
   for (const item of items) item[key]=structuredClone(value);
 }
+
+export function editorOptions(options,current,unsupported=[]) {
+  return options.filter(([id])=>!unsupported.includes(id)||id===current)
+    .map(([id,label])=>({id,label,unsupported:unsupported.includes(id)}));
+}

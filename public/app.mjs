@@ -4,7 +4,7 @@ import {comparison} from './formula.mjs';
 import {importedEdgeShape, routePoints, containsBox, simplifyPoints, straightenCorners, snapAlignment, snapWaypoint, closestPathPosition, edgeLabelPoint} from './geometry.mjs';
 import {readDiagram} from './import.mjs';
 import {icon, innerIcon} from './icons.mjs';
-import {toggleItem, commonProperty, setProperty} from './selection.mjs';
+import {toggleItem, commonProperty, setProperty, editorOptions} from './selection.mjs';
 import {stateLinkColor, componentColor, setColorPreset, setCustomColor, setResourceColor} from './colors.mjs';
 
 const $=id=>document.getElementById(id);
@@ -13,6 +13,7 @@ const storageKey='resource-flow-project-v1';
 const plotTypes=new Set(['pool','register','delay','queue','converter']);
 const resourceNodeTypes=new Set(['pool','source','sink','converter','gate','delay','queue','trader']);
 const triggers={passive:'Passive',auto:'Auto',click:'On click',enable:'On enable',start:'On start',agent:'Agentic'};
+const unsupportedOptions={trigger:['agent'],mode:['unsupported'],type:['trader','unknown'],transfer:['instant']};
 const nodeColors={register:stateLinkColor,end:'#f3a3ae'};
 const entries=Object.entries;
 const shorten=(s,len)=>s.length>len?s.slice(0,len-1)+'…':s;
@@ -395,10 +396,18 @@ function inputField(name,value,onChange,options={}) {
   input.addEventListener('keydown',e=>{if(e.key==='Enter'&&!options.multiline)input.blur();});
   return labelled(name,input);
 }
-function selectField(name,value,options,onChange) {
-  const control=el('select',{},options.map(([id,label])=>el('option',{value:id,text:label})));
+function selectField(name,value,options,onChange,unsupported=[]) {
+  const control=el('select',{},editorOptions(options,value,unsupported).map(option=>el('option',{
+    value:option.id,
+    text:option.unsupported&&!/unsupported/i.test(option.label)?option.label+' (unsupported)':option.label,
+    class:option.unsupported?'unsupported-option':null,
+  })));
   control.value=value;
-  control.addEventListener('change',()=>onChange(control.value));
+  control.classList.toggle('unsupported-value',unsupported.includes(value));
+  control.addEventListener('change',()=>{
+    control.classList.toggle('unsupported-value',unsupported.includes(control.value));
+    onChange(control.value);
+  });
   return labelled(name,control);
 }
 function check(name,value,onChange) {
@@ -468,7 +477,7 @@ function fields(items) {
   return {
     set,edit,common,
     field:(label,key,options)=>common(key)?inputField(label,item[key],v=>set(key,v),options):null,
-    menu:(label,key,options)=>common(key)?selectField(label,item[key],options,v=>set(key,v)):null,
+    menu:(label,key,options)=>common(key)?selectField(label,item[key],options,v=>set(key,v),unsupportedOptions[key]):null,
     flag:(label,key)=>common(key)?check(label,item[key],v=>set(key,v)):null,
   };
 }
@@ -568,7 +577,7 @@ function edgeInspector(e,items=[e]) {
           if (v==='trigger') item.triggerOn='change';
           else delete item.triggerOn;
         });
-      }):null,
+      },unsupportedOptions.mode):null,
       state&&common('mode','triggerOn')&&e.mode==='trigger'?selectField('Trigger on',e.triggerOn,entries(triggerModes),v=>edit(item=>{
         item.triggerOn=v;
         item.formula=v==='chance'?'100':'*';

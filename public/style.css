@@ -180,6 +180,9 @@ h3 {color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.1
 .inspector-group label.checkbox {display:flex;align-items:center;gap:7px;font-weight:500}
 .inspector-group input[type=checkbox] {appearance:auto;accent-color:var(--mint);width:15px;height:15px;min-height:auto;margin:0}
 .inspector-group input[type=color] {width:100%;padding:4px}
+.inspector-group select.unsupported-value {color:var(--danger);border-color:var(--danger)}
+.inspector-group select option {color:var(--text);background:var(--panel-alt)}
+.inspector-group select option.unsupported-option {color:var(--danger)}
 .pair {display:grid;grid-template-columns:1fr 1fr;gap:8px}
 .field-note {color:var(--muted);font-size:11px;line-height:1.5;margin:-3px 0 10px}
 .field-note.selection-note {margin:0 14px 12px}

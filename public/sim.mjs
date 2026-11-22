@@ -65,7 +65,7 @@ export class Simulation {
     this.variables();
     for (const n of project.nodes) {
       if (!tickTypes.has(n.type) && n.type !== 'text') this.issues.add(n.label + ': ' + n.type + ' has no local simulation behavior.');
-      if (n.trigger === 'agent') this.issues.add(n.label + ': agentic triggers need Machinations online.');
+      if (n.trigger === 'agent') this.issues.add(n.label + ': Machinations\' agentic triggers are not supported.');
       if (holdings.has(n.type)) {
         this.stocks.set(n.id,new Map());
         if (n.type === 'delay' || n.type === 'queue') this.buffer.set(n.id,[]);

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {blank, makeNode, makeEdge, normalize} from '../public/model.mjs';
-import {toggleItem, commonProperty, setProperty} from '../public/selection.mjs';
+import {toggleItem, commonProperty, setProperty, editorOptions} from '../public/selection.mjs';
 
 test('Ctrl-click selection toggles objects without replacing or mutating the remaining selection',()=>{
   const node={kind:'node',id:'a'}, edge={kind:'edge',id:'b'};
@@ -49,4 +49,37 @@ test('Register and State link colours survive saving and reject invalid colours'
   assert.equal(invalid.edges[0].color,'');
   delete project.edges[0].color;
   assert.equal(normalize(project).edges[0].color,'');
+});
+
+test('dropdowns hide unsupported values except for the current imported setting',()=>{
+  const options=[['auto','Auto'],['agent','Agentic'],['passive','Passive']];
+  const original=structuredClone(options);
+  assert.deepEqual(editorOptions(options,'auto',['agent']),[
+    {id:'auto',label:'Auto',unsupported:false},{id:'passive',label:'Passive',unsupported:false},
+  ]);
+  assert.deepEqual(editorOptions(options,'agent',['agent']),[
+    {id:'auto',label:'Auto',unsupported:false},{id:'agent',label:'Agentic',unsupported:true},
+    {id:'passive',label:'Passive',unsupported:false},
+  ]);
+  assert.deepEqual(options,original);
+  // Resource IDs and endpoint IDs must not be filtered by settings with the same name.
+  assert.equal(editorOptions(options,'auto').length,3);
+});
+
+test('only the current unsupported node type is offered alongside supported replacements',()=>{
+  const options=[['pool','Pool'],['trader','Trader'],['unknown','Unknown node']];
+  assert.deepEqual(editorOptions(options,'trader',['trader','unknown']).map(option=>option.id),['pool','trader']);
+  assert.deepEqual(editorOptions(options,'unknown',['trader','unknown']).map(option=>option.id),['pool','unknown']);
+  assert.deepEqual(editorOptions(options,'pool',['trader','unknown']).map(option=>option.id),['pool']);
+});
+
+test('displaying unsupported imported settings does not change their saved values',()=>{
+  const project=blank();
+  project.nodes=[makeNode('source',{id:'a',trigger:'agent'}),makeNode('trader',{id:'t'})];
+  project.edges=[makeEdge('state','a','t',{mode:'unsupported',formula:'original formula'}),
+    makeEdge('flow','a','t',{transfer:'instant'})];
+  const saved=normalize(JSON.parse(JSON.stringify(project)));
+  assert.equal(saved.nodes[0].trigger,'agent');assert.equal(saved.nodes[1].type,'trader');
+  assert.equal(saved.edges[0].mode,'unsupported');assert.equal(saved.edges[0].formula,'original formula');
+  assert.equal(saved.edges[1].transfer,'instant');
 });
