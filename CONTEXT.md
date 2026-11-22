@@ -843,7 +843,7 @@ Additional limits and caveats:
 - Unsupported data is preserved only to the native schema's extent. Unknown original XML attributes, unsupported external configuration and arbitrary JSON extras are not all retained verbatim.
 - CSS breaks layout at roughly 1150, 880 and 540 px; native select/picker presentation is browser-dependent.
 - `.gitignore` ignores all `*.txt`, including prospective fixtures. Prefer tracked `.json`, `.xml`, `.svg`, `.mjs` or `.md` as appropriate.
-- Historical `old-readme.txt`, previous chat summaries, and temporary scripts can describe abandoned implementations. Current source plus checked-in regressions take precedence.
+- Current source plus checked-in regressions take precedence over historical files and past chat logs.
 
 ## 17. Maintenance log
 
