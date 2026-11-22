@@ -91,10 +91,12 @@ Changing the host name or port also changes the browser origin and therefore whi
 | `public/formula.mjs` | Expression tokenizer/parser, compiled closures, supported functions, comparison shorthand, seeded RNG |
 | `public/geometry.mjs` | Route validation, imported route rendering, label projection, simplification, box enclosure, snapping |
 | `public/colors.mjs` | Graphite default, imported colour parsing, preset references/migration, effective colour resolution and updates |
+| `public/connections.mjs` | Endpoint attachment rules, complete-connection dependency checks, disconnected/cyclic connection diagnostics |
 | `public/selection.mjs` | Pure selection toggling, shared-property comparison, cloned bulk assignments, filtered dropdown option descriptions |
 | `public/import.mjs` | Native JSON, wrapped XML responses, Machinations XML and captured SVG/HTML import into the native model |
 | `public/icons.mjs` | Trusted built-in SVG icon fragments and icon rendering helpers |
 | `test/colors.test.mjs` | Colour parsing, defaults, binding, migration, persistence, ambiguous matching |
+| `test/connections.test.mjs` | Free endpoint persistence/validation, exact endpoint rendering, safe simulation of incomplete diagrams, reconnect rules and cycle prevention |
 | `test/geometry.test.mjs` | Path projection, imported label migration, route persistence, snapping and selection geometry |
 | `test/selection.test.mjs` | Ctrl-click selection, matching properties, cloned arrays, saved colours, unsupported menu filtering and preservation |
 | `test/sim.test.mjs` | Formula evaluation, simulation behavior/order, random seeds, and URL validation |
@@ -105,7 +107,7 @@ There is no `package.json`, `node_modules` requirement, `npm test`, CI workflow,
 ### Dependency directions
 
 - `app.mjs` imports the model, simulator, formulas, geometry, import, icons, selection and colour utilities.
-- `sim.mjs` imports only the formula engine and model helpers; it must remain usable in Node without a DOM.
+- `sim.mjs` imports the formula engine, model helpers and connection validation; it must remain usable in Node without a DOM.
 - `model.mjs` imports geometry normalization and colour normalization; it is also DOM-independent.
 - `import.mjs` imports model/colour helpers and uses browser DOM/SVG APIs. Its XML/SVG paths require a DOM environment.
 - `geometry.mjs` does not create a DOM. Some functions accept an SVG-path-like object exposing `getTotalLength()` and `getPointAtLength()`; Node tests provide lightweight equivalents.
@@ -172,6 +174,7 @@ Known node type IDs are `source`, `pool`, `sink`, `gate`, `converter`, `register
 | --- | --- |
 | `id`, `type` | Identity and `flow` or `state`; invalid raw edge types normalize to `flow` |
 | `source`, `target` | IDs of components; normal resource flows join nodes, state links can attach to connections |
+| `sourcePoint`, `targetPoint` | Finite `{x,y}` positions for detached endpoints, default `null`; an empty endpoint ID plus its point is the saved disconnected representation |
 | `label` | Optional descriptive label, default `''`; the canvas pill normally displays `edgeSummary()` behavior/formula text |
 | `color`, `colorResource` | State link appearance and resource-preset reference; default empty |
 | `formula` | Flow amount or state behavior expression; factory defaults to `'1'` for flows, `'> 0'` for states |
@@ -194,7 +197,7 @@ State modes are `enable`, `trigger`, `triggerIf`, `input`, `add`, `multiply`, `o
 
 `makeEdge()` migrates legacy `reverse` triggers to `mode:'trigger', triggerOn:'failed'`. It also infers missing trigger subtypes from legacy formulas, converts percentage-style trigger formulas to numeric strings, uses `'*'` for non-chance triggers, and clears the formula for overwrite mode. Preserve these migrations when changing defaults.
 
-Normalization rejects missing endpoints, duplicate/missing component IDs, duplicate/missing resource IDs, and oversized node/edge arrays. It filters invalid resource references and rebuilds supported fields. Unknown extra JSON fields are generally dropped; it is not a lossless raw-Machinations storage format. Endpoint existence is validated more broadly than semantic endpoint-type correctness, so callers must still construct sensible flow/state relationships.
+Normalization rejects unresolved nonempty endpoint IDs and empty endpoint IDs without a finite matching `sourcePoint`/`targetPoint`. An explicitly detached endpoint with its position is valid native project data. Duplicate/missing component IDs, duplicate/missing resource IDs, and oversized node/edge arrays remain invalid. Unknown extra JSON fields are generally dropped. ID existence is broader than semantic connection validity: `connectionStatus()` additionally checks flow endpoints and connection dependencies for simulation.
 
 ### Route structure
 
@@ -258,7 +261,7 @@ Seed, speed, selection, camera, history, and chart controls are not saved as pro
 
 `record()` caps undo history at 60 snapshots. Use one `change()` for one user action, especially bulk edits. Assign arrays/objects independently to each object; `setProperty()` clones its value per target to avoid aliased inventories/filter arrays.
 
-Geometry drags are a separate transaction path: they capture a `before` snapshot when movement crosses a four-screen-pixel threshold, update/render during movement, and record/save once on completion. Cancel restores coordinates/routes/label positions and the prior selection. Geometry drags preserve the running simulation state; do not accidentally rerun formulas for every mouse move.
+Geometry drags are a separate transaction path: they capture a `before` snapshot when movement crosses a four-screen-pixel threshold, update/render during movement, and record/save once on completion. Cancel restores coordinates, endpoint IDs/free positions, routes, label positions and the prior selection. Node/waypoint/label moves preserve simulation state. Endpoint rewiring pauses Play when movement starts and resets the simulation once on commit because its connectivity indexes must be rebuilt; it does not rerun formulas on every mouse move.
 
 `restore()` handles undo and redo, clears waypoint caches and selection, resets the active tool/simulation, saves, and rerenders. It **does not call `fit()`** or replace `view`, so zoom/pan survive. Undoing an appearance edit still resets simulation because `restore()` always does so.
 
@@ -286,6 +289,7 @@ Node/edge groups have `data-kind`, `data-id`, keyboard focusability and accessib
 - `.tip`: arrowhead.
 - `[data-label]`: connector label group. Old historical code used `data-bend`; the current label gesture does not bend the connector.
 - `[data-waypoint]`, `[data-insert-waypoint]`, `data-edge`: editable handle identities.
+- `[data-endpoint="source"|"target"]`, `data-edge`: draggable connection endpoint handles; `.disconnected` marks a free endpoint and `.endpoint-target` highlights a valid drop target.
 - `.node-bg`, `.shape`, `.type-symbol`, `.count`, `.caption`: node rendering parts.
 - `#properties`: rebuilt Properties panel.
 - `#legend button[title]`: graph series choices; `#show-all-series`: legend filter.
@@ -305,11 +309,11 @@ Node/edge groups have `data-kind`, `data-id`, keyboard focusability and accessib
 - Dragging a node already in the selection moves the selected node group.
 - A normal click replaces selection. Deleting components also recursively removes incident connections and state links that refer to removed connections.
 
-`renderInspector()` enables bulk editing only when every selected item has the same category (`node` or `edge`) and the same `.type`. State links of differing `.mode` still share the `state` category, but mode-dependent fields are hidden unless their controlling values agree.
+`renderInspector()` enables general bulk property editing when every selected item has the same category (`node` or `edge`) and the same `.type`. State links of differing `.mode` still share the `state` category, but mode-dependent fields are hidden unless their controlling values agree. A selection made entirely of Registers and State links has a special shared Appearance editor even when node/edge categories are mixed. The same mixed selection works through marquee or Ctrl/Cmd-click.
 
 `fields(items)` produces `common`, `set`, `edit`, `field`, `menu`, and `flag` helpers. `commonProperty()` compares `JSON.stringify` values, so separate arrays with identical ordered contents compare equal. This is structural equality for the normalized model, not a general unordered-object comparator.
 
-Only shared values are editable. Differing labels/formulas/etc. are hidden, not replaced by blanks that could accidentally overwrite them. Custom inventory controls update the corresponding entry in every matching inventory. State-mode changes apply their dependent formula defaults and trigger subtype changes to every selected edge inside one transaction. Live values and single-node queue actions are not presented as one misleading aggregate value for a group.
+General property fields only edit shared values. Differing labels/formulas/etc. are hidden, not replaced by blanks that could accidentally overwrite them. Appearance is the explicit exception for multi-Register/State selections: differing colours or preset bindings show a disabled `Mixed colours` placeholder, and the resource presets/custom picker/default choice apply to every selected object in one transaction. Other mixed selections do not acquire a colour control. Custom inventory controls update corresponding entries in matching inventories. State-mode changes apply dependent formula defaults and trigger subtype changes to every selected edge inside one transaction. Live values and single-node queue actions are not presented as one misleading aggregate value for a group.
 
 Changing state mode resets formula defaults: `trigger -> '*'`, `input -> 'a'`, `enable/triggerIf -> '> 0'`, `add -> '+1'`, `multiply -> '10%'`, `split -> '1'`, otherwise empty. Trigger mode defaults `triggerOn` to `change`; other modes remove it. Changing trigger subtype sets its formula to `'100'` for chance or `'*'` otherwise. These are explicit UI transitions; merely displaying imported settings must not apply these defaults.
 
@@ -326,7 +330,7 @@ The `unsupportedOptions` map in `app.mjs` currently marks:
 
 `editorOptions()` filters unavailable choices out unless a choice equals the current value. `selectField()` marks those current options with `.unsupported-option`, marks the selected control `.unsupported-value`, and adds an unsupported label when needed. CSS uses the danger/red colour for both the option and the closed control; supported alternatives explicitly retain normal text colour.
 
-Filtering is scoped to the specific setting. A resource ID named `agent` or an endpoint ID named `unsupported` must remain available in unrelated menus. The import/model enums are deliberately broader than the offered editor choices. Do not filter them out of `normalize()` or the importer. Once a user switches to a supported value, the old unavailable value disappears from that object's menu; undo can restore it. Matching unsupported bulk values behave the same way. `split` is implemented and must stay selectable.
+Filtering is scoped to the specific setting. A resource ID named `agent` or `unsupported` must remain available in resource menus; those strings also do not invalidate component IDs used by endpoint dragging. The import/model enums are deliberately broader than the offered editor choices. Do not filter them out of `normalize()` or the importer. Once a user switches to a supported value, the old unavailable value disappears from that object's menu; undo can restore it. Matching unsupported bulk values behave the same way. `split` is implemented and must stay selectable.
 
 ### Camera and gestures
 
@@ -342,6 +346,7 @@ Screen positions are converted through `localPoint()` and `world()`. Zoom is cur
 | Ctrl/Cmd+click | Add/remove an object from selection |
 | Alt during node/waypoint placement or drag | Bypass alignment/right-angle snapping |
 | Drag connector label | Slide its center along its existing path |
+| Drag origin/destination handle | Reconnect to a node; State links can also attach to another connection; dropping on empty canvas leaves a detached endpoint |
 | Drag insertion handle | Add a waypoint |
 | Drag waypoint | Reposition it |
 | Double-click a waypoint, or Delete/Backspace on a focused waypoint | Remove the waypoint |
@@ -352,11 +357,11 @@ Screen positions are converted through `localPoint()` and `world()`. Zoom is cur
 | Escape | Cancel active drag/tool/partial connection as applicable |
 | Enter/Space on a focused component | Activate its normal graph-click behavior |
 
-Global shortcuts intentionally ignore events originating in `input`, `textarea`, `select`, or `button`, and are suppressed while a dialog is open. Browser automation may need to blur a form control before testing canvas shortcuts. Window blur cancels a drag and releases temporary pan state.
+Global shortcuts intentionally ignore events originating in `input`, `textarea`, `select`, or `button`, and are suppressed while a dialog is open. `#diagram` is focusable (`tabindex="0"`). Canvas pointer-down, ordinary non-dialog button actions, and every dialog's `close` event call `focusDiagram()` so subsequent Space/Delete/undo shortcuts work immediately. It avoids stealing focus from an open dialog. Text/select/colour fields retain normal form focus; automation may still need to blur an edited form control before canvas shortcuts. Tab-focused buttons retain their usual keyboard activation until used. Window blur cancels a drag and releases temporary pan state.
 
 ## 7. Geometry and connector labels
 
-`edgeLayout()` builds node anchors, recursively resolves edge endpoints that refer to other connections, and caches derived shapes. A connector-to-connector anchor is the other edge's current label/mid point. A recursion guard avoids infinitely resolving cyclic edge references; invalid/cyclic geometry can fail to produce a drawable shape even when IDs exist.
+`edgeLayout()` builds node anchors, recursively resolves edge endpoints that refer to other connections, and falls back to saved free positions for detached ends. Free anchors use radius zero, so the visible path reaches the saved cursor position without a node inset. A connector-to-connector anchor is the other edge's current label/mid point. A recursion guard avoids infinitely resolving cyclic references; invalid/cyclic geometry can still fail to produce a drawable shape. Explicit Fit includes endpoint positions and works for an all-free diagram with no nodes.
 
 For native connectors it generates a quadratic SVG path, trims endpoints toward the control point, and handles self-loops with a raised control point. For imported/edited routes it delegates to `importedEdgeShape()`.
 
@@ -383,7 +388,17 @@ Key geometry exports:
 
 `editablePoints()` uses saved route points when possible. For an exact preview/native curve, it samples the live SVG path, simplifies it, and straightens small rounded corners. `editRoute()` converts the edited geometry to straight interior points and clears `bend`; it preserves legacy label data while the normalized label fraction remains authoritative.
 
-When both endpoints move together, stored route points move with them. Selected labels on other connections project their proposed positions onto those connections rather than dragging the paths freely. Moving a single endpoint recomputes the path while the label retains its fraction. Reconnecting through Properties clears the old route.
+When both endpoint nodes move together, stored route points move with them. Selected labels on other connections project their proposed positions onto those connections rather than dragging the paths freely. Moving an endpoint recomputes the path while the label retains its fraction. Origin/Destination sidebar menus have been removed; reconnection is performed with the visible endpoint handles.
+
+### Endpoint dragging and incomplete connections
+
+`endpointTarget()` prefers non-Text nodes within their hit area plus an eight-screen-pixel snapping margin. For State links it can also pick an underlying connector wire or label using `document.elementsFromPoint()`, even while pointer capture routes events to the diagram. A connector attachment uses the other connector's current label/mid anchor, consistent with connection creation. The candidate is highlighted while dragging.
+
+`canAttachEndpoint()` accepts node drops for both connection types, permits connector drops only for State links, and rejects self references, duplicate opposite connector anchors and references that would create a dependency cycle. A rejected/empty drop remains a free endpoint rather than silently inventing a node. The model stores `edge.source/target = ''` and the corresponding world point. Reattaching sets the ID and clears its point.
+
+Native bends and saved waypoints remain usable during endpoint dragging. Exact captured preview paths are converted to editable sampled routing before rewiring, then their stale `rendered` snapshot is removed. Committing is one undoable edit; cancelling restores endpoint IDs/points and original routing. Disconnected ends are shown in red and remain draggable after save/reopen.
+
+`connectionStatus(project)` resolves which connections terminate in valid nodes/complete connection dependencies and produces dynamic issues for detached ends, incomplete references and cycles. These messages belong to `Simulation.issues`, not persisted `project.warnings`, so repairing a connection and rebuilding the simulation removes its issue. Incomplete connections remain in the project/rendering but are excluded from active simulation flow/state indexes, including State links depending on them. Both endpoints may be detached, and the native diagram may contain no nodes at all.
 
 Editing a captured rounded/native curve may convert its representation to an approximated polyline. Exact imported paths are not guaranteed after geometry edits. Label centers can reach endpoints; there is no additional inset based on label width to prevent overlap with an arrow or node.
 
@@ -438,12 +453,12 @@ The example is a standalone ES-module program run from the repository root. `Sim
 | `queueClick(id, amount=1)` | Queue an interactive node action/direction for the next tick |
 | `step` | Current tick number |
 | `ended` | Empty or the label of the End Condition that stopped the run |
-| `issues` | Set of import, expression, cycle, or unsupported-feature warnings |
+| `issues` | Set of import, disconnected/incomplete connection, expression, cycle, or unsupported-feature warnings |
 | `history` | Snapshots; with `retainHistory:false` only the latest one is retained in slot zero |
 | `activeEdges`, `edgeOverwrites`, `disabledRegisterOutputs` | Derived information used by canvas styling/live formula pills |
 | `events`, `activity` | Transfers and node activity for the current tick, including resource-specific gain/loss and failures |
 
-Important map groups are `nodes/edges/flow/states` and incoming/outgoing/control indexes; `stocks`, `registers`, `buffer`; `runtime/previousRuntime`; `nameScope/nameSources/base`; `registerInputs/lastModifiers/overwrittenRegisters`; `available/delivered`; and `pending/clicks/triggerAttempts/enabledBefore`.
+Important map groups are `nodes/edges/flow/states` and incoming/outgoing/control indexes; `stocks`, `registers`, `buffer`; `runtime/previousRuntime`; `nameScope/nameSources/base`; `registerInputs/lastModifiers/overwrittenRegisters`; `available/delivered`; and `pending/clicks/triggerAttempts/enabledBefore`. The constructor calls `connectionStatus()`: `edges` retains all configurations, while active `flow` and `states` exclude disconnected or cyclic dependencies. Resource planning treats absent resource stock as empty rather than crashing if a connection is redirected to a node without resource holdings.
 
 `snapshot()` emits `{step, values, resources}`. `values` includes only Pools, Converters, Delays, Queues and Registers. `resources` stores resource-type breakdowns for stock-holding nodes. Values are cleaned to 12 significant digits; tiny stock remnants below the engine's `1e-9` threshold are removed.
 
@@ -591,7 +606,7 @@ The importer translates activation synonyms, resource/filter information, initia
 
 Saved routing reads `mxGeometry` interior points, orthogonal style, and `formulaPoint`/`labelPoint`. State colours come from `strokeColor` style or explicit colour attributes. When rendered previews exist, their valid computed state stroke colour takes precedence over XML, with XML as fallback.
 
-`discardDangling()` repeatedly removes connections with unresolved endpoints, including cascading state links, and records a warning. Native JSON with invalid endpoint IDs is rejected by normalization instead of taking this XML/SVG omission path.
+`discardDangling()` repeatedly removes connections with unresolved endpoints, including cascading state links, and records a warning. That XML/SVG import behavior is unchanged. Native JSON preserves explicitly free endpoints with finite saved positions; unresolved nonempty IDs and absent free positions are still rejected by normalization.
 
 Parameters are read from recognizable variable groups. External/json/sheet/market/http/feed-style parameters are warned about, not fetched or executed. Register formulas are not guaranteed recoverable from a screenshot-like SVG capture.
 
@@ -649,11 +664,12 @@ User text is rendered as text. Formula evaluation is a whitelist parser. XML ent
 
 ### Current checked-in baseline
 
-On **2026-11-22**, with Node.js **v24.14.0**, `node --test` completed with **59 passed, 0 failed, 0 skipped** across four files. The count is a dated baseline, not a permanently fixed requirement; update it when tests change.
+On **2026-11-22**, with Node.js **v24.14.0**, `node --test` completed with **69 passed, 0 failed, 0 skipped** across five files. The count is a dated baseline, not a permanently fixed requirement; update it when tests change.
 
 | Test file | Current count | Main coverage |
 | --- | --- | --- |
 | `test/colors.test.mjs` | 6 | Imported hex/RGB values; graphite; live resource presets/custom independence; duplicate colours; old-file migration; missing/stale references |
+| `test/connections.test.mjs` | 10 | Saved detached positions including node-free diagrams; invalid IDs/positions; no endpoint inset; safely ignored incomplete flows/State links and dependencies; reconnection targets; cycle prevention; absent source stock |
 | `test/geometry.test.mjs` | 13 | Straight/vertical/diagonal/curved/degenerate label projection; endpoint clamping; routed bends; untouched imported labels; save/reopen; exact route/caption offsets; marquee enclosure; waypoint expansion/deletion; simplification; alignment/right-angle snapping |
 | `test/selection.test.mjs` | 7 | Toggle identity; same-value comparison including stacks; independent cloned arrays; colour normalization; unsupported option filtering; current imported type preservation |
 | `test/sim.test.mjs` | 33 | Parser/math/dice; nonfinite values/errors; Register dependencies/feedback; activators/overwrites; stocks/capacity/interval; all-or-nothing; trigger chance/gain/loss/failure; buffers/queues; gates/conversion; resource filtering; end-condition ordering; seeds; public URL validation |
@@ -671,6 +687,7 @@ node --test test/sim.test.mjs
 node --test test/geometry.test.mjs
 node --test test/colors.test.mjs
 node --test test/selection.test.mjs
+node --test test/connections.test.mjs
 
 # One behavior by test name
 node --test --test-name-pattern="same seed" test/sim.test.mjs
@@ -720,7 +737,7 @@ try {
   assert.equal(response.headers.get('cache-control'), 'no-store');
   assert.ok(response.headers.get('content-security-policy').includes("default-src 'none'"));
   for (const path of ['/app.mjs', '/model.mjs', '/sim.mjs', '/formula.mjs',
-    '/geometry.mjs', '/colors.mjs', '/selection.mjs', '/import.mjs', '/icons.mjs', '/style.css']) {
+    '/geometry.mjs', '/colors.mjs', '/selection.mjs', '/connections.mjs', '/import.mjs', '/icons.mjs', '/style.css']) {
     assert.equal((await fetch(base + path)).status, 200, path);
   }
   assert.equal((await fetch(base + '/missing')).status, 404);
@@ -752,6 +769,10 @@ Use a clean test browser profile or first export the user's current project. Do 
 | Bulk sources | Select three Sources with different labels, common resource Enemies and common trigger Auto. Edit resource/trigger once; all three change, labels remain distinct, undo reverses all three together. |
 | Bulk dependency fields | Select matching state links; change mode/subtype/chance. Dependent defaults and fields update consistently for all selected links. |
 | Bulk inventories | Select Pools with identical stacks/filters; edit quantity/resource/remove/add entries. Each Pool updates without sharing mutable arrays. |
+| Mixed appearance | Select only Registers and State links with Ctrl-click and with a marquee, including differing colours. Shared presets/picker/default apply to all in one undoable edit; adding a Pool/flow hides this mixed colour editor. |
+| Reconnect | Drag both ends of flows/State links to different nodes. State links can also attach to another connector; flows cannot. Check highlight, route/label persistence, cancellation, undo and unchanged camera. Origin/Destination menus must be absent. |
+| Detached ends | Drop an end on empty canvas; it stays at the cursor, appears red, survives reopen and produces a Diagram Issue. Partial diagrams must simulate safely. Repair it and verify the issue disappears. Test both free ends with no nodes. |
+| Dialog/button focus | Close Issues with X and other dialogs with X/Escape, then use Space/Delete immediately without another canvas click. Repeat after toolbar actions. Text/colour/select editing and open dialogs must retain proper input focus. |
 | Defaults/colour | New Registers and State links use graphite. Choose a resource preset, change that resource colour, save/reopen, and change it again; linked appearances follow. |
 | Custom independence | Set a custom colour equal to a preset hex. Change that resource; custom object remains unchanged. Delete a bound resource; last appearance stays; undo restores reference. |
 | Duplicate presets | Two resources share one hex; choose each by name/ID on different objects. Recolour one resource; only its bound objects change. |
@@ -773,9 +794,9 @@ No Playwright/Puppeteer package or browser test runner is checked in. Prior deve
 
 For automation, start the app on an isolated port/profile, use a browser/automation tool already available in the environment, and query the DOM contracts above. Import through the dialog to exercise the actual parser. The pure model/engine can also be loaded through dynamic import in a browser page, but module-local `project` and `sim` are not window globals.
 
-Use actual pointer events for drag coverage: pointer capture and replaced SVG children make synthetic DOM event-only drag tests misleading. Derive screen coordinates with `getScreenCTM()` and account for `view.scale`; test multiple move events, release, cancellation and undo. Read selected option classes/computed colours for unsupported controls; native popup rendering can differ by browser/OS, so the closed unsupported select is also red and text-labelled.
+Use actual pointer events for drag coverage: pointer capture and replaced SVG children make synthetic DOM event-only drag tests misleading. Derive screen coordinates with `getScreenCTM()` and account for `view.scale`; test multiple move events, release, cancellation and undo. If connector labels overlap, find a visible point on the intended wire using hit testing rather than assuming its pill is the topmost clickable object. Read selected option classes/computed colours for unsupported controls; native popup rendering can differ by browser/OS, so the closed unsupported select is also red and text-labelled.
 
-Inspect `localStorage.getItem('resource-flow-project-v1')` only within the isolated test profile. After interacting with a form/button, blur it before expecting the canvas-level Ctrl+Z handler to run. Screenshots should be test evidence, not accidentally committed user project data.
+Inspect `localStorage.getItem('resource-flow-project-v1')` only within the isolated test profile. Ordinary buttons/dialog closing should automatically restore diagram focus; explicitly test this without a helper that manually blurs them. Edited form fields intentionally retain focus and may need blurring before a canvas shortcut. Screenshots should be test evidence, not accidentally committed user project data.
 
 ## 15. Safe contribution recipes
 
@@ -797,7 +818,7 @@ Reduce it to a small factory-built model with explicit IDs and seed. Assert quan
 
 ### Change an inspector field
 
-Use `fields(items)` for matching/bulk behavior. If a field has dependent defaults or arrays, update every selected object in one `change()` and clone assigned values. Maintain context-specific unsupported filtering; do not accidentally filter resource/endpoint IDs by enum names.
+Use `fields(items)` for matching/bulk behavior. If a field has dependent defaults or arrays, update every selected object in one `change()` and clone assigned values. Preserve the explicit mixed Register/State Appearance exception. Maintain context-specific unsupported filtering; do not accidentally filter resource IDs by enum names. Do not reintroduce Origin/Destination menus as the normal endpoint editor.
 
 ### Change routes/drag behavior
 
@@ -818,10 +839,12 @@ Run the relevant tests/checks and inspect the final diff. Broaden testing when c
 | Browser appears to lose a project | Check host/port/profile origin and localStorage; use exported JSON for durable backups. There is one autosaved project per origin. |
 | Changed module is 404 / app fails to boot | Check `server.mjs` asset allowlist and relative imports. No compilation step can repair it. |
 | `EADDRINUSE` | Another process owns the chosen port; select a different `PORT`. Do not kill unrelated user processes. |
-| CTRL shortcuts seem ignored | Focus is inside a form/button or a dialog is open; the handler deliberately returns in those cases. |
+| CTRL shortcuts seem ignored | Open dialogs and edited form fields intentionally suppress them. Ordinary button actions and dialog close must return focus through `focusDiagram()`; verify its delegated click/close handlers if focus remains stranded on a toolbar button. |
+| Disconnected connector cannot reopen | Empty endpoint IDs require finite `sourcePoint`/`targetPoint`; native normalization must retain them. XML/SVG dangling-import handling remains separate. |
+| Disconnect causes simulation exception/stale issues | Check `connectionStatus()`, active index filtering and endpoint-commit simulation reset. Connectivity issues must not be appended to persistent import warnings. |
 | Imported label stays at old coordinates | Check eager `edgeLabelPoint()` migration and preserved `labelPosition`, not just label-drag code. |
 | Undo recenters canvas | `restore()` must not call `fit()` or restore a different `view`. |
-| Bulk property disappears | Values or controlling modes differ; only matching same-type properties are shown by design. |
+| Bulk property disappears | Values or controlling modes differ; general properties require matching values on the same type. A selection containing only Registers and State links always offers shared Appearance, including mixed colours. |
 | Unsupported value is missing/wrong after import | Check import/normalization separately from editor filtering. Do not remove compatibility enums. |
 | Preset does not follow a resource | Check `colorResource` ID, cached colour, migration ambiguity, and whether the choice was explicitly custom. |
 | Public preview fails but XML imports | Check installed/configured browser, launch permissions, remote DOM changes and capture deadline; fallback is intentional. |
@@ -839,7 +862,7 @@ Additional limits and caveats:
 - Auto history retains every tick in memory; only forecast/explicit `retainHistory:false` bounds this to the latest snapshot.
 - Warnings carried from imports are persisted strings; converting an object does not necessarily remove every historical import warning automatically.
 - No arbitrary external variables, service calls, agentic triggers, Trader exchanges, full Math.js, multiuser collaboration or native export back into Machinations exists.
-- Unsupported data is preserved only to the native schema's extent. Unknown original XML attributes, unsupported external configuration and arbitrary JSON extras are not all retained verbatim.
+- Unsupported data is preserved only to the native schema's extent. Unknown original XML attributes, unsupported external configuration and arbitrary JSON extras are not all retained verbatim. Explicit native free endpoint positions are supported; this does not change omission of unresolvable XML/SVG connections.
 - CSS breaks layout at roughly 1150, 880 and 540 px; native select/picker presentation is browser-dependent.
 - `.gitignore` ignores all `*.txt`, including prospective fixtures. Prefer tracked `.json`, `.xml`, `.svg`, `.mjs` or `.md` as appropriate.
 - Current source plus checked-in regressions take precedence over historical files and past chat logs.
@@ -852,3 +875,12 @@ Additional limits and caveats:
 - Documented architecture, every production module, saved schemas, transient state, undo/persistence, SVG interaction, imported label migration, bulk Properties, unsupported options, colour references, simulation phases, formulas, public/XML/SVG imports, HTTP boundaries, tests and contribution recipes.
 - Verified the current 59-test offline suite, syntax checks for all existing production/test ES modules, and local HTTP route/asset/security checks on Node.js v24.14.0.
 - No application behavior or `README.md` changes are part of this documentation task.
+
+### 2026-11-22: mixed appearance, endpoint dragging and focus restoration
+
+- Added shared Appearance editing for any selection composed only of Registers and State links, including mixed categories/colours and both Ctrl-click/marquee selection. Presets, custom colours and default resets apply atomically.
+- Replaced Origin/Destination menus with draggable source/target handles. Added saved `sourcePoint`/`targetPoint`, node/connector drop validation, candidate highlights, detached red handles, route-aware reconnection, cancellation and undo.
+- Added `connections.mjs` to resolve complete connection dependencies and report disconnected/cyclic endpoints. Simulations skip incomplete connections safely; repairing them clears dynamic issues. Native JSON saves free ends while malformed IDs/positions remain invalid.
+- Made the diagram focusable and restored focus after ordinary button actions and every dialog close. Open dialogs and form fields continue to own their input normally.
+- Added ten endpoint/connection regression tests; current offline suite passes 69 tests. Browser verification covers mixed colour editing, real endpoint drags, issue repair/reopen, imported routes, undo/cancel, click-without-drag selection, diagrams with both ends free and real dialog/toolbar focus behavior. Production/test module syntax, whitespace and local HTTP asset/security smoke checks also pass.
+- Updated this file; left `README.md` unchanged.

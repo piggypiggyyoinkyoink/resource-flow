@@ -1,5 +1,6 @@
 import {compile, comparison, seeded} from './formula.mjs';
 import {fallback, variableName} from './model.mjs';
+import {connectionStatus} from './connections.mjs';
 
 const sum = map => [...map.values()].reduce((total,n)=>total+n,0);
 const add = (map,key,n) => {
@@ -26,12 +27,13 @@ export class Simulation {
     this.retainHistory = retainHistory;
     this.step = 0;
     this.ended = '';
-    this.issues = new Set(project.warnings);
+    const connections=connectionStatus(project);
+    this.issues = new Set([...project.warnings,...connections.issues]);
     this.nodes = new Map(project.nodes.map(n=>[n.id,n]));
     this.endConditions = project.nodes.filter(n=>n.type==='end');
     this.edges = new Map(project.edges.map(e=>[e.id,e]));
-    this.flow = project.edges.filter(e=>e.type==='flow');
-    this.states = project.edges.filter(e=>e.type==='state');
+    this.flow = project.edges.filter(e=>e.type==='flow'&&connections.connected.has(e.id));
+    this.states = project.edges.filter(e=>e.type==='state'&&connections.connected.has(e.id));
     this.incoming = by(this.flow,'target');
     this.outgoing = by(this.flow,'source');
     this.control = by(this.states,'target');
@@ -350,7 +352,7 @@ export class Simulation {
       if (!this.canUse(e) || !this.due(e)) continue;
       const from = this.nodes.get(e.source), to = this.nodes.get(e.target);
       const minted = from.type==='source' || override?.mint;
-      const stock = override?.stock || this.available.get(from.id);
+      const stock = override?.stock || this.available.get(from.id) || new Map();
       if (!override && this.buffer.has(from.id)) continue;
       const allowed = type => (!e.resource || type===e.resource) && (!to.resourceFilter.length || to.resourceFilter.includes(type));
       const sources = minted ? [[from.resource,Infinity]] : [...(stock||[])].reverse();

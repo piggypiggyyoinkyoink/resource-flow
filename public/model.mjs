@@ -1,5 +1,6 @@
 import {normalizeRoute, point} from './geometry.mjs';
 import {normalizeAppearance} from './colors.mjs';
+import {endpointKeys} from './connections.mjs';
 
 export const kinds = {
   source: 'Source', pool: 'Pool', sink: 'Sink', gate: 'Gate', converter: 'Converter',
@@ -40,6 +41,7 @@ export function makeEdge(type, source, target, props = {}) {
     id: id('e'), type, source, target, label: '', color: '', colorResource: '', formula: type === 'state' ? '> 0' : '1',
     condition: '', mode: 'enable', chanceAmount: '1', interval: '1', transfer: 'interval',
     decimals: false, min: '', max: '', resource: '', shuffle: false, bend: 0, labelPosition: null, note: '', ...props,
+    sourcePoint:point(props.sourcePoint),targetPoint:point(props.targetPoint),
   };
   if (edge.type==='state' && edge.mode==='overwrite') edge.formula='';
   if (edge.type==='state' && (edge.mode==='trigger' || edge.mode==='reverse')) {
@@ -116,11 +118,14 @@ export function normalize(raw) {
       chanceAmount: string(e.chanceAmount, '1'), decimals: !!e.decimals, min: string(e.min), max: string(e.max),
       resource: resourceIds.has(e.resource) ? e.resource : '', shuffle: !!e.shuffle, bend: number(e.bend),
       labelPosition:Number.isFinite(e.labelPosition)?Math.max(0,Math.min(1,e.labelPosition)):null,
+      sourcePoint:point(e.sourcePoint),targetPoint:point(e.targetPoint),
       route:normalizeRoute(e.route), note: string(e.note),
     });
   });
   for (const edge of project.edges) {
-    if (!ids.has(edge.source) || !ids.has(edge.target)) throw Error('Connection ' + edge.id + ' has a missing endpoint.');
+    for (const key of endpointKeys) {
+      if (edge[key]? !ids.has(edge[key]):!edge[key+'Point']) throw Error('Connection ' + edge.id + ' has a missing endpoint.');
+    }
   }
   project.variables = Array.isArray(raw.variables) ? raw.variables.map(v => ({
     name: string(v?.name), formula: string(v?.formula, '0'),

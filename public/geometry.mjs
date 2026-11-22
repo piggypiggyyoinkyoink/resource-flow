@@ -78,7 +78,7 @@ function orthogonal(points) {
 
 function trimEnd(point,towards) {
   const length = distance(point,towards) || 1;
-  const inset = Math.min(length*.45,point.r||13);
+  const inset = Math.min(length*.45,point.r??13);
   return {x:point.x+(towards.x-point.x)*inset/length,y:point.y+(towards.y-point.y)*inset/length};
 }
 

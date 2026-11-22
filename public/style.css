@@ -13,6 +13,7 @@ button,input,select,textarea {font:inherit}
 button {cursor:pointer}
 button:disabled {cursor:default;opacity:.36}
 button:focus-visible, a:focus-visible, [tabindex]:focus-visible {outline:2px solid var(--mint);outline-offset:3px}
+#diagram:focus {outline:0 !important}
 input,select,textarea {background:#0e1521;color:var(--text);border:1px solid #324057;border-radius:7px;
   padding:8px 10px;min-height:36px;outline:0;width:100%}
 input:focus,select:focus,textarea:focus {border-color:var(--mint);box-shadow:0 0 0 2px #71e5bc22}
@@ -131,7 +132,12 @@ h3 {color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.1
 .waypoint:hover,.waypoint:focus-visible,.waypoint.snapped {fill:var(--mint);stroke:#e5fff5}
 .waypoint-insert {fill:#71e5bc55;stroke-width:1}
 .waypoint-insert:hover {fill:var(--mint)}
-.waypoint-end {fill:#152132;stroke:var(--mint);stroke-width:1;pointer-events:none}
+.endpoint-handle {fill:#152132;stroke:var(--mint);stroke-width:2;cursor:crosshair;outline:none}
+.endpoint-handle:hover,.endpoint-handle:focus-visible {fill:var(--mint)}
+.endpoint-handle.disconnected {stroke:var(--danger)}
+.endpoint-handle.disconnected:hover,.endpoint-handle.disconnected:focus-visible {fill:var(--danger)}
+.node.endpoint-target .halo {stroke:var(--mint);stroke-width:3}
+.edge.endpoint-target .wire,.edge.endpoint-target .wire-label {stroke:var(--mint);stroke-width:3}
 .zoom {position:absolute;display:flex;align-items:center;gap:3px;bottom:13px;right:13px;padding:3px 5px;
   border-radius:8px;border:1px solid #344157;background:#162030;box-shadow:0 2px 12px #0005}
 .zoom .icon-button {width:30px;min-height:29px}
