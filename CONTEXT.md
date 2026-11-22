@@ -98,7 +98,6 @@ Changing the host name or port also changes the browser origin and therefore whi
 | `test/geometry.test.mjs` | Path projection, imported label migration, route persistence, snapping and selection geometry |
 | `test/selection.test.mjs` | Ctrl-click selection, matching properties, cloned arrays, saved colours, unsupported menu filtering and preservation |
 | `test/sim.test.mjs` | Formula evaluation, simulation behavior/order, random seeds, and URL validation |
-| `old-readme.txt` | Historical local notes if present; not an authoritative current specification |
 | `.gitignore` | Currently ignores `*.txt`; remember this when creating fixtures or documentation |
 
 There is no `package.json`, `node_modules` requirement, `npm test`, CI workflow, checked-in browser automation suite, generated production bundle, or third-party charting library. Add a new browser-served file to the explicit `files` map in `server.mjs`; merely creating a file under `public/` does not make it available over HTTP.
